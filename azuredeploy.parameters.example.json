@@ -19,6 +19,14 @@
                 "CTEM_Manual_Workstation"
             ]
         },
+        "runHours": {
+            "value": [
+                2,
+                8,
+                12,
+                16
+            ]
+        },
         "fullRunHour": {
             "value": 2
         },

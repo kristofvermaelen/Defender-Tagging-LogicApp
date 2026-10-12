@@ -21,12 +21,22 @@ An Azure Logic App (Consumption) that automatically tags devices in **Microsoft 
 
 ### Schedule: full run and light run
 
-The app runs every day at **02:00, 08:00, 12:00 and 16:00** (Belgian time, `Romance Standard Time`).
+The app runs every day at the hours in `runHours` (Belgian time, `Romance Standard Time`). The default is **02:00, 08:00, 12:00 and 16:00**.
 
 | Run | When | Which devices |
 |---|---|---|
 | **Full** | At `fullRunHour` (default 02:00), or when `ForceFullRun = true` | All devices. Tags are corrected. |
-| **Light** | At all other hours | Only devices **without** an auto tag, CatchAll tag or manual tag, so new devices |
+| **Light** | At all other hours in `runHours` | Only devices **without** an auto tag, CatchAll tag or manual tag, so new devices |
+
+Examples:
+
+| Customer | `runHours` | `fullRunHour` | Result |
+|---|---|---|---|
+| Once a day | `[2]` | `2` | One full run per day |
+| Default | `[2, 8, 12, 16]` | `2` | Full run at 02:00, light runs at 08:00, 12:00, 16:00 |
+| Six times a day | `[0, 4, 8, 12, 16, 20]` | `0` | Full run at midnight, five light runs |
+
+> `fullRunHour` **must** be one of the hours in `runHours`. Otherwise there is never a full run and existing tags are never corrected. The template cannot check this.
 
 The light run is cheap because Defender only returns the new devices. The Logic App is billed per executed action, so every run over all devices costs money.
 
@@ -65,7 +75,8 @@ Set per customer in the parameter file.
 | `taggingRules` | SECAAS rules | The rules, see [Writing rules](#writing-rules) |
 | `catchAllTag` | `CTEM-CatchAll` | Tag for devices that match no rule |
 | `manualTags` | `CTEM_Manual_…` | Tags that exclude a device from automatic tagging |
-| `fullRunHour` | `2` | Hour (Belgian time) of the full run: `2`, `8`, `12` or `16` |
+| `runHours` | `[2, 8, 12, 16]` | Hours (0–23, Belgian time) at which the app runs every day |
+| `fullRunHour` | `2` | Hour (0–23, Belgian time) of the full run. Must be one of `runHours`. |
 
 The template passes these values to the workflow parameters (`RunMode`, `TaggingRules`, `CatchAllTag`, `ManualTags`, `FullRunHour`). The **Initialize_Variables** action reads them from there.
 

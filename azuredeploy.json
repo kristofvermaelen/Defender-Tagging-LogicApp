@@ -121,17 +121,25 @@
                 "description": "Tags that exclude a device from automatic tagging."
             }
         },
-        "fullRunHour": {
-            "type": "Int",
-            "defaultValue": 2,
-            "allowedValues": [
+        "runHours": {
+            "type": "Array",
+            "defaultValue": [
                 2,
                 8,
                 12,
                 16
             ],
             "metadata": {
-                "description": "Hour (Romance Standard Time) of the daily full run. Must be one of the scheduled hours."
+                "description": "Hours (0-23, Romance Standard Time) at which the Logic App runs every day, e.g. [2] for once a day or [0,4,8,12,16,20] for six times a day."
+            }
+        },
+        "fullRunHour": {
+            "type": "Int",
+            "defaultValue": 2,
+            "minValue": 0,
+            "maxValue": 23,
+            "metadata": {
+                "description": "Hour (0-23, Romance Standard Time) of the daily full run. MUST be one of runHours, otherwise only light runs happen. Other hours are light runs."
             }
         }
     },
@@ -177,28 +185,7 @@
                                 "frequency": "Day",
                                 "timeZone": "Romance Standard Time",
                                 "schedule": {
-                                    "hours": [
-                                        2,
-                                        8,
-                                        12,
-                                        16
-                                    ],
-                                    "minutes": [
-                                        0
-                                    ]
-                                }
-                            },
-                            "evaluatedRecurrence": {
-                                "interval": 1,
-                                "frequency": "Day",
-                                "timeZone": "Romance Standard Time",
-                                "schedule": {
-                                    "hours": [
-                                        2,
-                                        8,
-                                        12,
-                                        16
-                                    ],
+                                    "hours": "[parameters('runHours')]",
                                     "minutes": [
                                         0
                                     ]
