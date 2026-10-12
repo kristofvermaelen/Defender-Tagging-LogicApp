@@ -55,6 +55,18 @@
                             "width": 416,
                             "height": 44
                         }
+                    },
+                    "6B1C2E4A-5D3F-4E8A-9C7B-2F1A0D3E5B6C": {
+                        "content": "RunMode (variable):\n- contains 'Email' -> send CSV report by mail\n- contains 'Tag' -> actually add/remove tags in Defender\nExamples: 'CsvEmail' (report only), 'CsvEmailTag' (report + tagging), 'Tag' (tagging only)",
+                        "color": "#FFE5CC",
+                        "metadata": {
+                            "position": {
+                                "x": 680,
+                                "y": 200
+                            },
+                            "width": 443,
+                            "height": 104
+                        }
                     }
                 }
             },
@@ -213,6 +225,82 @@
                                     "TagToRemove": "@{join(body('TagsToRemove'), ', ')}"
                                 }
                             }
+                        },
+                        "Runmode_-_Tag": {
+                            "actions": {
+                                "For_Each_TagToAdd": {
+                                    "foreach": "@body('TagsToAdd')",
+                                    "actions": {
+                                        "Machines_-_Add_tag": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                "body": {
+                                                    "Value": "@{item()}",
+                                                    "Action": "Add"
+                                                },
+                                                "retryPolicy": {
+                                                    "type": "exponential",
+                                                    "count": 10,
+                                                    "interval": "PT1M",
+                                                    "maximumInterval": "PT1H"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "type": "Foreach"
+                                },
+                                "For_Each_TagToRemove": {
+                                    "foreach": "@body('TagsToRemove')",
+                                    "actions": {
+                                        "Machines_-_Remove_tag": {
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                "body": {
+                                                    "Value": "@{item()}",
+                                                    "Action": "Remove"
+                                                },
+                                                "retryPolicy": {
+                                                    "type": "exponential",
+                                                    "count": 10,
+                                                    "interval": "PT1M",
+                                                    "maximumInterval": "PT1H"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "For_Each_TagToAdd": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Foreach"
+                                }
+                            },
+                            "runAfter": {
+                                "Append_to_ReportRows": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "expression": "@and(contains(variables('RunMode'), 'Tag'), or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))))",
+                            "type": "If"
                         },
                         "MatchedTags": {
                             "runAfter": {
