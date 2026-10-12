@@ -119,6 +119,11 @@
                         "queries": {
                             "$filter": "@variables('FilterString')"
                         }
+                    },
+                    "runtimeConfiguration": {
+                        "paginationPolicy": {
+                            "minimumItemCount": 100000
+                        }
                     }
                 },
                 "For_Each_Machine": {
@@ -149,157 +154,75 @@
                             "type": "Compose",
                             "inputs": "@intersection(\n  coalesce(item()?['machineTags'], json('[]')),\n  variables('ManualTags')\n)"
                         },
-                        "NoManualTagPresent": {
-                            "actions": {
-                                "Did_Filter_Matched": {
-                                    "actions": {
-                                        "AllReadytagged": {
-                                            "actions": {
-                                                "Append_to_array_variable-copy_1": {
-                                                    "type": "AppendToArrayVariable",
-                                                    "inputs": {
-                                                        "name": "ReportRows",
-                                                        "value": {
-                                                            "MachineId": "@{item()?['id']}",
-                                                            "computerDnsName": "@{item()?['computerDnsName']}",
-                                                            "osPlatform": "@{item()?['osPlatform']}",
-                                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                                            "machineTags": "@{item()?['machineTags']}",
-                                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                                            "isAadJoined": "@{item()?['isAadJoined']}",
-                                                            "managedBy": "@{item()?['managedBy']}",
-                                                            "Manualtags": "",
-                                                            "ExistingTags": "@{outputs('ExistingAutoTags')}",
-                                                            "TagToAdd": "@{join(\n  union(body('MatchedTags'), body('MatchedTags')),\n  ', '\n)}",
-                                                            "TagToRemove": "ietsmoetweg"
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            "else": {
-                                                "actions": {
-                                                    "Append_to_array_variable": {
-                                                        "type": "AppendToArrayVariable",
-                                                        "inputs": {
-                                                            "name": "ReportRows",
-                                                            "value": {
-                                                                "MachineId": "@{item()?['id']}",
-                                                                "computerDnsName": "@{item()?['computerDnsName']}",
-                                                                "osPlatform": "@{item()?['osPlatform']}",
-                                                                "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                                                "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                                                "machineTags": "@{item()?['machineTags']}",
-                                                                "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                                                "isAadJoined": "@{item()?['isAadJoined']}",
-                                                                "managedBy": "@{item()?['managedBy']}",
-                                                                "Manualtags": "",
-                                                                "ExistingTags": "",
-                                                                "TagToAdd": "@{join(\n  union(body('MatchedTags'), body('MatchedTags')),\n  ', '\n)}",
-                                                                "TagToRemove": ""
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            "expression": "@not(empty(body('ExistingAutoTags')))",
-                                            "type": "If"
-                                        }
-                                    },
-                                    "else": {
-                                        "actions": {
-                                            "Append_to_array_-_Catchall": {
-                                                "type": "AppendToArrayVariable",
-                                                "inputs": {
-                                                    "name": "ReportRows",
-                                                    "value": {
-                                                        "MachineId": "@{item()?['id']}",
-                                                        "computerDnsName": "@{item()?['computerDnsName']}",
-                                                        "osPlatform": "@{item()?['osPlatform']}",
-                                                        "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                                        "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                                        "machineTags": "@{item()?['machineTags']}",
-                                                        "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                                        "isAadJoined": "@{item()?['isAadJoined']}",
-                                                        "managedBy": "@{item()?['managedBy']}",
-                                                        "Manualtags": "",
-                                                        "ExistingTags": "",
-                                                        "TagToAdd": "@{variables('CatchAllTag')}",
-                                                        "TagToRemove": ""
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    "expression": "@not(empty(body('Apply_Filter')))",
-                                    "type": "If"
-                                }
-                            },
+                        "DesiredAutoTags": {
                             "runAfter": {
                                 "ExistingAutoTags": [
                                     "Succeeded"
                                 ]
                             },
-                            "else": {
-                                "actions": {
-                                    "AutoTagNOTPresent": {
-                                        "actions": {
-                                            "Append_to_array_variable-copy": {
-                                                "type": "AppendToArrayVariable",
-                                                "inputs": {
-                                                    "name": "ReportRows",
-                                                    "value": {
-                                                        "MachineId": "@{item()?['id']}",
-                                                        "computerDnsName": "@{item()?['computerDnsName']}",
-                                                        "osPlatform": "@{item()?['osPlatform']}",
-                                                        "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                                        "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                                        "machineTags": "@{item()?['machineTags']}",
-                                                        "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                                        "isAadJoined": "@{item()?['isAadJoined']}",
-                                                        "managedBy": "@{item()?['managedBy']}",
-                                                        "Manualtags": "@{outputs('ExistingManualTags')}",
-                                                        "ExistingTags": "",
-                                                        "TagToAdd": "",
-                                                        "TagToRemove": ""
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        "else": {
-                                            "actions": {
-                                                "Append_to_array_-_Catchall-copy": {
-                                                    "type": "AppendToArrayVariable",
-                                                    "inputs": {
-                                                        "name": "ReportRows",
-                                                        "value": {
-                                                            "MachineId": "@{item()?['id']}",
-                                                            "computerDnsName": "@{item()?['computerDnsName']}",
-                                                            "osPlatform": "@{item()?['osPlatform']}",
-                                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                                            "machineTags": "@{item()?['machineTags']}",
-                                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                                            "isAadJoined": "@{item()?['isAadJoined']}",
-                                                            "managedBy": "@{item()?['managedBy']}",
-                                                            "Manualtags": "@{outputs('ExistingManualTags')}",
-                                                            "ExistingTags": "@{outputs('ExistingAutoTags')}",
-                                                            "TagToAdd": "",
-                                                            "TagToRemove": "@{outputs('ExistingAutoTags')}"
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        "expression": "@not(empty(body('ExistingAutoTags')))",
-                                        "type": "If"
+                            "type": "Compose",
+                            "inputs": "@if(\n  not(empty(outputs('ExistingManualTags'))),\n  json('[]'),\n  if(\n    empty(body('MatchedTags')),\n    array(variables('CatchAllTag')),\n    union(body('MatchedTags'), body('MatchedTags'))\n  )\n)"
+                        },
+                        "TagsToAdd": {
+                            "runAfter": {
+                                "DesiredAutoTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@outputs('DesiredAutoTags')",
+                                "where": "@not(contains(outputs('ExistingAutoTags'), item()))"
+                            }
+                        },
+                        "TagsToRemove": {
+                            "runAfter": {
+                                "TagsToAdd": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@outputs('ExistingAutoTags')",
+                                "where": "@not(contains(outputs('DesiredAutoTags'), item()))"
+                            }
+                        },
+                        "HasTagChanges": {
+                            "actions": {
+                                "Append_to_ReportRows": {
+                                    "type": "AppendToArrayVariable",
+                                    "inputs": {
+                                        "name": "ReportRows",
+                                        "value": {
+                                            "MachineId": "@{item()?['id']}",
+                                            "computerDnsName": "@{item()?['computerDnsName']}",
+                                            "osPlatform": "@{item()?['osPlatform']}",
+                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                            "machineTags": "@{join(coalesce(item()?['machineTags'], json('[]')), ', ')}",
+                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                            "isAadJoined": "@{item()?['isAadJoined']}",
+                                            "managedBy": "@{item()?['managedBy']}",
+                                            "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                            "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                            "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                            "TagToRemove": "@{join(body('TagsToRemove'), ', ')}"
+                                        }
                                     }
                                 }
                             },
-                            "expression": "@empty(outputs('ExistingManualTags'))",
+                            "runAfter": {
+                                "TagsToRemove": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "expression": "@or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove'))))",
                             "type": "If"
                         },
-                        "MatchedTags": {
+"MatchedTags": {
                             "runAfter": {
                                 "Apply_Filter": [
                                     "Succeeded"
