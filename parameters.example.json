@@ -1,0 +1,56 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "logicAppName": {
+            "value": "CustomerX-Defender-Tagging"
+        },
+        "state": {
+            "value": "Disabled"
+        },
+        "runMode": {
+            "value": "Report"
+        },
+        "catchAllTag": {
+            "value": "CTEM-CatchAll"
+        },
+        "manualTags": {
+            "value": [
+                "CTEM_Manual_Workstation"
+            ]
+        },
+        "fullRunHour": {
+            "value": 2
+        },
+        "taggingRules": {
+            "value": {
+                "rules": [
+                    {
+                        "tag": "SECAAS_WKS",
+                        "assetDomain": "Workplace",
+                        "osPlatform": {
+                            "startsWith": "Windows1"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_WIN SRV",
+                        "assetDomain": "Hybrid cloud Windows",
+                        "osPlatform": {
+                            "startsWith": "WindowsServer"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_WIN SRV",
+                        "assetDomain": "Hybrid cloud Windows",
+                        "computerDnsName": {
+                            "startsWith": "DC"
+                        },
+                        "osPlatform": {
+                            "startsWith": "Windows"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}

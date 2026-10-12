@@ -2,9 +2,137 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "workflows_PXSNXT_CTEM_Tagging_name": {
-            "defaultValue": "PXSNXT-CTEM-Tagging",
-            "type": "String"
+        "logicAppName": {
+            "type": "String",
+            "defaultValue": "Defender-Tagging",
+            "metadata": {
+                "description": "Name of the Logic App."
+            }
+        },
+        "location": {
+            "type": "String",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "description": "Azure region. Defaults to the location of the resource group."
+            }
+        },
+        "state": {
+            "type": "String",
+            "defaultValue": "Disabled",
+            "allowedValues": [
+                "Enabled",
+                "Disabled"
+            ],
+            "metadata": {
+                "description": "Keep Disabled until Grant-DefenderPermissions.ps1 has run and 15 minutes have passed, otherwise runs can fail with 403 for up to 24 hours."
+            }
+        },
+        "runMode": {
+            "type": "String",
+            "defaultValue": "Report",
+            "allowedValues": [
+                "Report",
+                "ReportAndTag"
+            ],
+            "metadata": {
+                "description": "Report = only build the report. ReportAndTag = report and add/remove tags in Defender."
+            }
+        },
+        "taggingRules": {
+            "type": "Object",
+            "metadata": {
+                "description": "Tagging rules: { \"rules\": [ { \"tag\": ..., \"assetDomain\": ..., <conditions> } ] }. See README."
+            },
+            "defaultValue": {
+                "rules": [
+                    {
+                        "tag": "SECAAS_WKS",
+                        "assetDomain": "Workplace",
+                        "osPlatform": {
+                            "startsWith": "Windows10"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_WKS",
+                        "assetDomain": "Workplace",
+                        "osPlatform": {
+                            "startsWith": "Windows11"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_WIN SRV",
+                        "assetDomain": "Hybrid cloud Windows",
+                        "osPlatform": {
+                            "startsWith": "WindowsServer"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_LXS SRV",
+                        "assetDomain": "Hybrid cloud Linux/Unix",
+                        "osPlatform": {
+                            "equals": "Linux"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_LXS SRV",
+                        "assetDomain": "Hybrid cloud Linux/Unix",
+                        "osPlatform": {
+                            "equals": "Ubuntu"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_LXS SRV",
+                        "assetDomain": "Hybrid cloud Linux/Unix",
+                        "osPlatform": {
+                            "equals": "RockyLinux"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_LXS SRV",
+                        "assetDomain": "Hybrid cloud Linux/Unix",
+                        "osPlatform": {
+                            "equals": "CentOS"
+                        }
+                    },
+                    {
+                        "tag": "SECAAS_OTHER",
+                        "assetDomain": "Workplace",
+                        "osPlatform": {
+                            "equals": "iOS"
+                        }
+                    }
+                ]
+            }
+        },
+        "catchAllTag": {
+            "type": "String",
+            "defaultValue": "CTEM-CatchAll",
+            "metadata": {
+                "description": "Tag for devices that match no rule."
+            }
+        },
+        "manualTags": {
+            "type": "Array",
+            "defaultValue": [
+                "CTEM_Manual_Workstation",
+                "CTEM_Manual_Workstation2"
+            ],
+            "metadata": {
+                "description": "Tags that exclude a device from automatic tagging."
+            }
+        },
+        "fullRunHour": {
+            "type": "Int",
+            "defaultValue": 2,
+            "allowedValues": [
+                2,
+                8,
+                12,
+                16
+            ],
+            "metadata": {
+                "description": "Hour (Romance Standard Time) of the daily full run. Must be one of the scheduled hours."
+            }
         }
     },
     "variables": {},
@@ -12,13 +140,13 @@
         {
             "type": "Microsoft.Logic/workflows",
             "apiVersion": "2017-07-01",
-            "name": "[parameters('workflows_PXSNXT_CTEM_Tagging_name')]",
-            "location": "northeurope",
+            "name": "[parameters('logicAppName')]",
+            "location": "[parameters('location')]",
             "identity": {
                 "type": "SystemAssigned"
             },
             "properties": {
-                "state": "Enabled",
+                "state": "[parameters('state')]",
                 "definition": {
                     "metadata": {
                         "notes": {}
@@ -26,9 +154,20 @@
                     "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
                     "contentVersion": "1.0.0.0",
                     "parameters": {
-                        "$connections": {
-                            "defaultValue": {},
+                        "RunMode": {
+                            "type": "String"
+                        },
+                        "TaggingRules": {
                             "type": "Object"
+                        },
+                        "CatchAllTag": {
+                            "type": "String"
+                        },
+                        "ManualTags": {
+                            "type": "Array"
+                        },
+                        "FullRunHour": {
+                            "type": "Int"
                         }
                     },
                     "triggers": {
@@ -503,7 +642,7 @@
                                     {
                                         "name": "RunMode",
                                         "type": "string",
-                                        "value": "Report"
+                                        "value": "@parameters('RunMode')"
                                     },
                                     {
                                         "name": "ReportRows",
@@ -513,71 +652,12 @@
                                     {
                                         "name": "CTEM_Tagging_Rules",
                                         "type": "object",
-                                        "value": {
-                                            "rules": [
-                                                {
-                                                    "tag": "SECAAS_WKS",
-                                                    "assetDomain": "Workplace",
-                                                    "osPlatform": {
-                                                        "startsWith": "Windows10"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_WKS",
-                                                    "assetDomain": "Workplace",
-                                                    "osPlatform": {
-                                                        "startsWith": "Windows11"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_WIN SRV",
-                                                    "assetDomain": "Hybrid cloud Windows",
-                                                    "osPlatform": {
-                                                        "startsWith": "WindowsServer"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_LXS SRV",
-                                                    "assetDomain": "Hybrid cloud Linux/Unix",
-                                                    "osPlatform": {
-                                                        "equals": "Linux"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_LXS SRV",
-                                                    "assetDomain": "Hybrid cloud Linux/Unix",
-                                                    "osPlatform": {
-                                                        "equals": "Ubuntu"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_LXS SRV",
-                                                    "assetDomain": "Hybrid cloud Linux/Unix",
-                                                    "osPlatform": {
-                                                        "equals": "RockyLinux"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_LXS SRV",
-                                                    "assetDomain": "Hybrid cloud Linux/Unix",
-                                                    "osPlatform": {
-                                                        "equals": "CentOS"
-                                                    }
-                                                },
-                                                {
-                                                    "tag": "SECAAS_OTHER",
-                                                    "assetDomain": "Workplace",
-                                                    "osPlatform": {
-                                                        "equals": "iOS"
-                                                    }
-                                                }
-                                            ]
-                                        }
+                                        "value": "@parameters('TaggingRules')"
                                     },
                                     {
                                         "name": "CatchAllTag",
                                         "type": "string",
-                                        "value": "CTEM-CatchAll"
+                                        "value": "@parameters('CatchAllTag')"
                                     },
                                     {
                                         "name": "ForceFullRun",
@@ -587,7 +667,7 @@
                                     {
                                         "name": "FullRunHour",
                                         "type": "integer",
-                                        "value": 2
+                                        "value": "@parameters('FullRunHour')"
                                     },
                                     {
                                         "name": "Machines",
@@ -622,10 +702,7 @@
                                     {
                                         "name": "ManualTags",
                                         "type": "array",
-                                        "value": [
-                                            "CTEM_Manual_Workstation",
-                                            "CTEM_Manual_Workstation2"
-                                        ]
+                                        "value": "@parameters('ManualTags')"
                                     }
                                 ]
                             }
@@ -718,11 +795,29 @@
                     "outputs": {}
                 },
                 "parameters": {
-                    "$connections": {
-                        "value": {}
+                    "RunMode": {
+                        "value": "[parameters('runMode')]"
+                    },
+                    "TaggingRules": {
+                        "value": "[parameters('taggingRules')]"
+                    },
+                    "CatchAllTag": {
+                        "value": "[parameters('catchAllTag')]"
+                    },
+                    "ManualTags": {
+                        "value": "[parameters('manualTags')]"
+                    },
+                    "FullRunHour": {
+                        "value": "[parameters('fullRunHour')]"
                     }
                 }
             }
         }
-    ]
+    ],
+    "outputs": {
+        "principalId": {
+            "type": "String",
+            "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName')), '2017-07-01', 'full').identity.principalId]"
+        }
+    }
 }

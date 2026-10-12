@@ -12,8 +12,10 @@ An Azure Logic App (Consumption) that automatically tags devices in **Microsoft 
 
 | File | Contents |
 |---|---|
-| `AutomationTaskTemplate.json` | The full Logic App (template format) |
+| `template.json` | ARM template of the Logic App. **This is the main file.** |
+| `parameters.example.json` | Example parameter file. Copy it per customer. |
 | `Grant-DefenderPermissions.ps1` | Grants the Defender API permissions to the managed identity (once per tenant) |
+| `automation-task/AutomationTaskTemplate.json` | Same workflow in Azure automation task template format. Kept for reference, not kept in sync with `template.json`. |
 
 ## How it works
 
@@ -23,7 +25,7 @@ The app runs every day at **02:00, 08:00, 12:00 and 16:00** (Belgian time, `Roma
 
 | Run | When | Which devices |
 |---|---|---|
-| **Full** | At `FullRunHour` (default 02:00), or when `ForceFullRun = true` | All devices. Tags are corrected. |
+| **Full** | At `fullRunHour` (default 02:00), or when `ForceFullRun = true` | All devices. Tags are corrected. |
 | **Light** | At all other hours | Only devices **without** an auto tag, CatchAll tag or manual tag, so new devices |
 
 The light run is cheap because Defender only returns the new devices. The Logic App is billed per executed action, so every run over all devices costs money.
@@ -34,9 +36,9 @@ Devices are fetched in pages of `PageSize` (10,000) with `$top`/`$skip` until a 
 
 ### Tag logic per device
 
-1. **Manual tag present** (a tag from `ManualTags`): the device gets **no** auto tags. Existing auto tags are removed.
+1. **Manual tag present** (a tag from `manualTags`): the device gets **no** auto tags. Existing auto tags are removed.
 2. **One or more rules match**: the device gets the tags of all matching rules.
-3. **No rule matches**: the device gets the `CatchAllTag`.
+3. **No rule matches**: the device gets the `catchAllTag`.
 
 Only tags listed in the rules, plus the CatchAll tag, are managed. Any other tags on a device are always left alone.
 
@@ -44,23 +46,35 @@ Only tags listed in the rules, plus the CatchAll tag, are managed. Any other tag
 
 The Microsoft Defender ATP connector also supports managed identity. We still use plain HTTP actions with managed identity authentication because:
 
-- **No API connection resource.** The connector needs a separate `Microsoft.Web/connections` resource per Logic App. With HTTP, the Logic App is the only resource to deploy, which keeps a future ARM/Bicep template per customer simple.
+- **No API connection resource.** The connector needs a separate `Microsoft.Web/connections` resource per Logic App. With HTTP, the Logic App is the only resource in the ARM template.
 - **Reliable paging.** It is not confirmed that the connector's pagination policy works for tenants with more than 10,000 devices. The HTTP version uses its own `$top`/`$skip` loop, so all devices are always fetched.
 - **Same permissions.** Both options need the same Defender API permission on the managed identity (`Grant-DefenderPermissions.ps1`), so the connector gives no advantage there.
 
 The trade-off is that the designer shows a URL and JSON body instead of the connector's form fields.
 
-## Variables
+## Template parameters
 
-All variables are in the **Initialize_Variables** action.
+Set per customer in the parameter file.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `logicAppName` | `Defender-Tagging` | Name of the Logic App |
+| `location` | Resource group location | Azure region |
+| `state` | `Disabled` | `Enabled` / `Disabled`. Keep `Disabled` until the permissions are set (see step 3). |
+| `runMode` | `Report` | `Report`: report only. `ReportAndTag`: report and actually change tags. |
+| `taggingRules` | SECAAS rules | The rules, see [Writing rules](#writing-rules) |
+| `catchAllTag` | `CTEM-CatchAll` | Tag for devices that match no rule |
+| `manualTags` | `CTEM_Manual_…` | Tags that exclude a device from automatic tagging |
+| `fullRunHour` | `2` | Hour (Belgian time) of the full run: `2`, `8`, `12` or `16` |
+
+The template passes these values to the workflow parameters (`RunMode`, `TaggingRules`, `CatchAllTag`, `ManualTags`, `FullRunHour`). The **Initialize_Variables** action reads them from there.
+
+### Workflow variables
+
+These are set in the **Initialize_Variables** action itself, not in the template parameters.
 
 | Variable | Default | Description |
 |---|---|---|
-| `RunMode` | `Report` | `Report`: report only. `ReportAndTag`: report and actually change tags. |
-| `CTEM_Tagging_Rules` | | The rules, see below |
-| `CatchAllTag` | `CTEM-CatchAll` | Tag for devices that match no rule |
-| `ManualTags` | `CTEM_Manual_…` | Tags that exclude a device from automatic tagging |
-| `FullRunHour` | `2` | Hour (Belgian time) of the full run. Must be one of the scheduled hours. |
 | `ForceFullRun` | `false` | `true` = every run is a full run. Useful for manual testing. |
 | `PageSize` | `10000` | Number of devices per API call (Defender API maximum) |
 | `Machines`, `Skip`, `MorePages`, `FetchFailed`, `FilterString`, `ReportRows` | | Internal, do not change |
@@ -97,26 +111,33 @@ Possible `osPlatform` values include: `Windows10`, `Windows11`, `WindowsServer20
 
 ## Deploying to a customer
 
-### 1. Create the Logic App
+### 1. Prepare the parameter file
 
-Create a **Logic App (Consumption)** in the customer tenant.
+Copy `parameters.example.json` to e.g. `customerX.parameters.json` and set the name, rules and tags for the customer. Leave `state` on `Disabled` and `runMode` on `Report`.
 
-### 2. Paste the code
+> Customer parameter files contain customer-specific names. Keep them out of public repositories.
 
-The Logic App code view does **not** accept the full `AutomationTaskTemplate.json`. If you paste it, saving fails with *"Could not find member 'connections'"*. Paste only the `definition` and `parameters` part. To extract it:
+### 2. Deploy the template
+
+**Azure CLI:**
 
 ```powershell
-$j = Get-Content .\AutomationTaskTemplate.json -Raw | ConvertFrom-Json
-@{ definition = $j.data.definition; parameters = @{} } | ConvertTo-Json -Depth 100 | Set-Clipboard
+az login --tenant <tenant>.onmicrosoft.com
+az deployment group create -g <resource-group> --template-file template.json --parameters customerX.parameters.json --query properties.outputs.principalId.value -o tsv
 ```
 
-Then go to the Logic App → **Logic app code view** → **Ctrl+A**, **Ctrl+V** → **Save**.
+**Azure PowerShell:**
 
-### 3. Enable the managed identity
+```powershell
+Connect-AzAccount -Tenant <tenant>.onmicrosoft.com
+(New-AzResourceGroupDeployment -ResourceGroupName <resource-group> -TemplateFile template.json -TemplateParameterFile customerX.parameters.json).Outputs.principalId.Value
+```
 
-Logic App → **Identity** → **System assigned** → **On** → **Save**. Copy the **Object (principal) ID**.
+**Portal:** search for **Deploy a custom template** → **Build your own template in the editor** → **Load file** → `template.json` → **Save**. Fill in the parameters (or **Edit parameters** → **Load file** → your parameter file) → **Review + create**. The Object ID is shown under **Outputs** of the deployment.
 
-### 4. Grant Defender permissions
+All three return the **Object (principal) ID** of the managed identity. You can also find it in the Logic App → **Identity** → **System assigned**.
+
+### 3. Grant Defender permissions
 
 To be run by a Global Administrator or Privileged Role Administrator of the customer:
 
@@ -133,21 +154,24 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
 > [!WARNING]
-> **Wait at least 15 minutes after running the script before the first run.** The new permission needs a few minutes to propagate in Entra ID.
+> **Wait at least 15 minutes after running the script before enabling the Logic App.** The new permission needs a few minutes to propagate in Entra ID.
 >
 > If the Logic App runs too early, it gets a token **without** the role. Azure runs Logic Apps on multiple servers, and each server caches its own token for **up to 24 hours**. As a result, runs can fail with `403 Forbidden` (`FetchMachinesFailed`) at random for up to 24 hours, even though the permission is set correctly. Some runs succeed, others fail, depending on the server they land on.
 >
-> This resolves itself once the cached tokens expire. Until then, keep `RunMode = Report`, so no tag changes are half applied. Disable the Logic App during setup, so the schedule cannot trigger a run too early.
+> This resolves itself once the cached tokens expire. That is why the template deploys the Logic App as `Disabled` by default.
 
-### 5. Set rules and variables
+### 4. Enable and test
 
-Adjust `CTEM_Tagging_Rules`, `CatchAllTag` and `ManualTags` for the customer. Leave `RunMode` on `Report` for now.
+1. Logic App → **Overview** → **Enable**.
+2. In the designer, set the variable `ForceFullRun = true` → **Save** → **Run** → **Run**.
+3. Open the run and check the output of **Create_CSV_table**. That is the report.
+4. Set `ForceFullRun` back to `false`.
 
-### 6. Test
+### 5. Switch on tagging
 
-1. Set `ForceFullRun = true` and click **Run** → **Run**.
-2. Open the run and check the output of **Create_CSV_table**. That is the report.
-3. If the proposal looks right, set `RunMode = ReportAndTag` and `ForceFullRun = false`.
+If the report looks right, set `runMode` to `ReportAndTag` in the parameter file and deploy again (step 2, with `state` set to `Enabled`).
+
+> Redeploying overwrites changes made in the portal. Make changes in the parameter file or `template.json`, not only in the designer.
 
 ## Report
 
@@ -172,10 +196,10 @@ The report is available as CSV in the **run history**, in the `Create_CSV_table`
 
 | Error | Cause / fix |
 |---|---|
-| `Could not find member 'connections'` on Save | You pasted the full template file. Paste only `definition` and `parameters` (see step 2). |
-| `401 Unauthorized` on HTTP actions | The managed identity is not enabled (step 3). |
-| Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the Logic App ran before the permission had propagated. In the latter case, tokens without the role stay cached on some Azure servers for up to 24 hours, so runs fail at random (some succeed, some fail) until they expire. Check the permission (next row). If it is assigned, wait up to 24 hours. See the warning in step 4. |
+| `Could not find member 'connections'` when saving in code view | You pasted `automation-task/AutomationTaskTemplate.json` into the code view. Deploy `template.json` instead (step 2). |
+| `401 Unauthorized` on HTTP actions | The managed identity is not enabled. The template enables it; check Logic App → **Identity**. |
+| Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 3 was not run, or the Logic App ran before the permission had propagated. In the latter case, tokens without the role stay cached on some Azure servers for up to 24 hours, so runs fail at random (some succeed, some fail) until they expire. Check the permission (next row). If it is assigned, wait up to 24 hours. See the warning in step 3. |
 | Check if the permission is assigned | Entra ID → Enterprise applications → filter *Managed Identities* → the Logic App → **Permissions** → should list WindowsDefenderATP `Machine.ReadWrite.All`. |
-| `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first (see step 4). |
+| `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first (see step 3). |
 | `429 Too Many Requests` | Defender API rate limit reached. The app retries by itself. With many changes, the run simply takes longer. |
 | Light run still picks up many devices | Those devices don't have a tag from the rules yet. They will be tagged after the next full run. |
