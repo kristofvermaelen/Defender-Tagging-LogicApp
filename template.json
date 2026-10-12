@@ -1,0 +1,728 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_PXSNXT_CTEM_Tagging_name": {
+            "defaultValue": "PXSNXT-CTEM-Tagging",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_PXSNXT_CTEM_Tagging_name')]",
+            "location": "northeurope",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "metadata": {
+                        "notes": {}
+                    },
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "interval": 1,
+                                "frequency": "Day",
+                                "timeZone": "Romance Standard Time",
+                                "schedule": {
+                                    "hours": [
+                                        2,
+                                        8,
+                                        12,
+                                        16
+                                    ],
+                                    "minutes": [
+                                        0
+                                    ]
+                                }
+                            },
+                            "evaluatedRecurrence": {
+                                "interval": 1,
+                                "frequency": "Day",
+                                "timeZone": "Romance Standard Time",
+                                "schedule": {
+                                    "hours": [
+                                        2,
+                                        8,
+                                        12,
+                                        16
+                                    ],
+                                    "minutes": [
+                                        0
+                                    ]
+                                }
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "AllTags": {
+                            "runAfter": {
+                                "Initialize_Variables": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Select",
+                            "inputs": {
+                                "from": "@variables('CTEM_Tagging_Rules')?['rules']",
+                                "select": "@item()?['tag']"
+                            }
+                        },
+                        "TagFilterString": {
+                            "runAfter": {
+                                "UniqueTagsWithCatchAll": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@concat('(t: t eq ''', join(union(outputs('UniqueTagsWithCatchAll'), variables('ManualTags')), ''' or t eq '''), ''')')"
+                        },
+                        "Get_All_Machines": {
+                            "actions": {
+                                "HTTP_-_Get_machines": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "uri": "https://api.securitycenter.microsoft.com/api/machines",
+                                        "method": "GET",
+                                        "queries": {
+                                            "$filter": "@variables('FilterString')",
+                                            "$top": "@{variables('PageSize')}",
+                                            "$skip": "@{variables('Skip')}"
+                                        },
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://api.securitycenter.microsoft.com"
+                                        },
+                                        "retryPolicy": {
+                                            "type": "exponential",
+                                            "count": 10,
+                                            "interval": "PT1M",
+                                            "maximumInterval": "PT1H"
+                                        }
+                                    }
+                                },
+                                "MachinesMerged": {
+                                    "runAfter": {
+                                        "HTTP_-_Get_machines": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@union(variables('Machines'), coalesce(body('HTTP_-_Get_machines')?['value'], json('[]')))"
+                                },
+                                "Set_Machines": {
+                                    "runAfter": {
+                                        "MachinesMerged": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "Machines",
+                                        "value": "@outputs('MachinesMerged')"
+                                    }
+                                },
+                                "Next_Page": {
+                                    "runAfter": {
+                                        "Set_Machines": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "IncrementVariable",
+                                    "inputs": {
+                                        "name": "Skip",
+                                        "value": "@variables('PageSize')"
+                                    }
+                                },
+                                "Set_MorePages": {
+                                    "runAfter": {
+                                        "Next_Page": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "MorePages",
+                                        "value": "@equals(length(coalesce(body('HTTP_-_Get_machines')?['value'], json('[]'))), variables('PageSize'))"
+                                    }
+                                },
+                                "Set_FetchFailed": {
+                                    "runAfter": {
+                                        "HTTP_-_Get_machines": [
+                                            "Failed",
+                                            "TimedOut"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "FetchFailed",
+                                        "value": true
+                                    }
+                                },
+                                "Stop_Paging": {
+                                    "runAfter": {
+                                        "Set_FetchFailed": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "MorePages",
+                                        "value": false
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Retagging": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": "@equals(variables('MorePages'), false)",
+                            "limit": {
+                                "count": 100,
+                                "timeout": "PT1H"
+                            },
+                            "type": "Until"
+                        },
+                        "Check_Fetch": {
+                            "actions": {
+                                "Terminate_-_Fetch_failed": {
+                                    "type": "Terminate",
+                                    "inputs": {
+                                        "runStatus": "Failed",
+                                        "runError": {
+                                            "code": "FetchMachinesFailed",
+                                            "message": "Could not fetch machines from the Defender API. Check the output of 'HTTP - Get machines' (403 = managed identity has no Machine.ReadWrite.All yet)."
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Get_All_Machines": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
+                                ]
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "expression": "@variables('FetchFailed')",
+                            "type": "If"
+                        },
+                        "For_Each_Machine": {
+                            "foreach": "@variables('Machines')",
+                            "actions": {
+                                "Apply_Filter": {
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@variables('CTEM_Tagging_Rules')?['rules']",
+                                        "where": "@and(\n  or(empty(item()?['computerDnsName']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['contains'], '')))),\n  or(empty(item()?['computerDnsName']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['startsWith'], '')))),\n  or(empty(item()?['computerDnsName']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['endsWith'], '')))),\n\n  or(empty(item()?['osPlatform']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['contains'], '')))),\n  or(empty(item()?['osPlatform']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['startsWith'], '')))),\n  or(empty(item()?['osPlatform']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['endsWith'], '')))),\n  or(empty(item()?['osPlatform']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['equals'], '')))),\n\n  or(empty(item()?['lastIpAddress']?['startsWith']), startsWith(coalesce(items('For_Each_Machine')?['lastIpAddress'], ''), coalesce(item()?['lastIpAddress']?['startsWith'], ''))),\n\n  or(empty(item()?['rbacGroupName']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['contains'], '')))),\n  or(empty(item()?['rbacGroupName']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['startsWith'], '')))),\n  or(empty(item()?['rbacGroupName']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['endsWith'], '')))),\n  or(empty(item()?['rbacGroupName']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['equals'], '')))),\n\n  or(empty(item()?['machineTags']?['equals']), contains(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), item()?['machineTags']?['equals'])),\n\n  or(empty(item()?['onboardingStatus']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['onboardingStatus'], '')), toLower(coalesce(item()?['onboardingStatus']?['equals'], '')))),\n\n  or(empty(item()?['managedBy']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['managedBy'], '')), toLower(coalesce(item()?['managedBy']?['equals'], '')))),\n  or(equals(item()?['isAadJoined']?['equals'], null),equals(items('For_Each_Machine')?['isAadJoined'],item()?['isAadJoined']?['equals']))\n)"
+                                    }
+                                },
+                                "ExistingAutoTags": {
+                                    "runAfter": {
+                                        "ExistingManualTags": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@intersection(\n  coalesce(item()?['machineTags'], json('[]')),\n  outputs('UniqueTagsWithCatchAll')\n)"
+                                },
+                                "ExistingManualTags": {
+                                    "runAfter": {
+                                        "MatchedTags": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@intersection(\n  coalesce(item()?['machineTags'], json('[]')),\n  variables('ManualTags')\n)"
+                                },
+                                "DesiredAutoTags": {
+                                    "runAfter": {
+                                        "ExistingAutoTags": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Compose",
+                                    "inputs": "@if(\n  not(empty(outputs('ExistingManualTags'))),\n  json('[]'),\n  if(\n    empty(body('MatchedTags')),\n    array(variables('CatchAllTag')),\n    union(body('MatchedTags'), body('MatchedTags'))\n  )\n)"
+                                },
+                                "TagsToAdd": {
+                                    "runAfter": {
+                                        "DesiredAutoTags": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@outputs('DesiredAutoTags')",
+                                        "where": "@not(contains(outputs('ExistingAutoTags'), item()))"
+                                    }
+                                },
+                                "TagsToRemove": {
+                                    "runAfter": {
+                                        "TagsToAdd": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@outputs('ExistingAutoTags')",
+                                        "where": "@not(contains(outputs('DesiredAutoTags'), item()))"
+                                    }
+                                },
+                                "Runmode_-_Tag": {
+                                    "actions": {
+                                        "For_Each_TagToAdd": {
+                                            "foreach": "@body('TagsToAdd')",
+                                            "actions": {
+                                                "HTTP_-_Add_tag": {
+                                                    "type": "Http",
+                                                    "inputs": {
+                                                        "uri": "https://api.securitycenter.microsoft.com/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                        "method": "POST",
+                                                        "headers": {
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "body": {
+                                                            "Value": "@{item()}",
+                                                            "Action": "Add"
+                                                        },
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity",
+                                                            "audience": "https://api.securitycenter.microsoft.com"
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 10,
+                                                            "interval": "PT1M",
+                                                            "maximumInterval": "PT1H"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "type": "Foreach"
+                                        },
+                                        "For_Each_TagToRemove": {
+                                            "foreach": "@body('TagsToRemove')",
+                                            "actions": {
+                                                "HTTP_-_Remove_tag": {
+                                                    "type": "Http",
+                                                    "inputs": {
+                                                        "uri": "https://api.securitycenter.microsoft.com/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                        "method": "POST",
+                                                        "headers": {
+                                                            "Content-Type": "application/json"
+                                                        },
+                                                        "body": {
+                                                            "Value": "@{item()}",
+                                                            "Action": "Remove"
+                                                        },
+                                                        "authentication": {
+                                                            "type": "ManagedServiceIdentity",
+                                                            "audience": "https://api.securitycenter.microsoft.com"
+                                                        },
+                                                        "retryPolicy": {
+                                                            "type": "exponential",
+                                                            "count": 10,
+                                                            "interval": "PT1M",
+                                                            "maximumInterval": "PT1H"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "For_Each_TagToAdd": [
+                                                    "Succeeded",
+                                                    "Failed",
+                                                    "TimedOut",
+                                                    "Skipped"
+                                                ]
+                                            },
+                                            "type": "Foreach"
+                                        },
+                                        "TagsAddedOK": {
+                                            "runAfter": {
+                                                "For_Each_TagToRemove": [
+                                                    "Succeeded",
+                                                    "Failed",
+                                                    "TimedOut",
+                                                    "Skipped"
+                                                ]
+                                            },
+                                            "type": "Query",
+                                            "inputs": {
+                                                "from": "@result('For_Each_TagToAdd')",
+                                                "where": "@equals(item()?['status'], 'Succeeded')"
+                                            }
+                                        },
+                                        "TagsRemovedOK": {
+                                            "runAfter": {
+                                                "TagsAddedOK": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Query",
+                                            "inputs": {
+                                                "from": "@result('For_Each_TagToRemove')",
+                                                "where": "@equals(item()?['status'], 'Succeeded')"
+                                            }
+                                        },
+                                        "TagsAddedOK_Names": {
+                                            "runAfter": {
+                                                "TagsRemovedOK": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Select",
+                                            "inputs": {
+                                                "from": "@body('TagsAddedOK')",
+                                                "select": "@item()?['inputs']?['body']?['Value']"
+                                            }
+                                        },
+                                        "TagsRemovedOK_Names": {
+                                            "runAfter": {
+                                                "TagsAddedOK_Names": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Select",
+                                            "inputs": {
+                                                "from": "@body('TagsRemovedOK')",
+                                                "select": "@item()?['inputs']?['body']?['Value']"
+                                            }
+                                        },
+                                        "Append_to_ReportRows_-_Tagged": {
+                                            "runAfter": {
+                                                "TagsRemovedOK_Names": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "AppendToArrayVariable",
+                                            "inputs": {
+                                                "name": "ReportRows",
+                                                "value": {
+                                                    "Status": "Change",
+                                                    "MachineId": "@{items('For_Each_Machine')?['id']}",
+                                                    "computerDnsName": "@{items('For_Each_Machine')?['computerDnsName']}",
+                                                    "osPlatform": "@{items('For_Each_Machine')?['osPlatform']}",
+                                                    "lastIpAddress": "@{items('For_Each_Machine')?['lastIpAddress']}",
+                                                    "rbacGroupName": "@{items('For_Each_Machine')?['rbacGroupName']}",
+                                                    "machineTags": "@{join(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), ', ')}",
+                                                    "onboardingStatus": "@{items('For_Each_Machine')?['onboardingStatus']}",
+                                                    "isAadJoined": "@{items('For_Each_Machine')?['isAadJoined']}",
+                                                    "managedBy": "@{items('For_Each_Machine')?['managedBy']}",
+                                                    "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                                    "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                                    "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                                    "TagToRemove": "@{join(body('TagsToRemove'), ', ')}",
+                                                    "TagAddedSuccess": "@{join(body('TagsAddedOK_Names'), ', ')}",
+                                                    "TagRemovedSuccess": "@{join(body('TagsRemovedOK_Names'), ', ')}"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "TagsToRemove": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Append_to_ReportRows": {
+                                                "type": "AppendToArrayVariable",
+                                                "inputs": {
+                                                    "name": "ReportRows",
+                                                    "value": {
+                                                        "Status": "@{if(or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))), 'Change', 'NoChange')}",
+                                                        "MachineId": "@{items('For_Each_Machine')?['id']}",
+                                                        "computerDnsName": "@{items('For_Each_Machine')?['computerDnsName']}",
+                                                        "osPlatform": "@{items('For_Each_Machine')?['osPlatform']}",
+                                                        "lastIpAddress": "@{items('For_Each_Machine')?['lastIpAddress']}",
+                                                        "rbacGroupName": "@{items('For_Each_Machine')?['rbacGroupName']}",
+                                                        "machineTags": "@{join(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), ', ')}",
+                                                        "onboardingStatus": "@{items('For_Each_Machine')?['onboardingStatus']}",
+                                                        "isAadJoined": "@{items('For_Each_Machine')?['isAadJoined']}",
+                                                        "managedBy": "@{items('For_Each_Machine')?['managedBy']}",
+                                                        "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                                        "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                                        "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                                        "TagToRemove": "@{join(body('TagsToRemove'), ', ')}",
+                                                        "TagAddedSuccess": "",
+                                                        "TagRemovedSuccess": ""
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": "@and(contains(variables('RunMode'), 'Tag'), or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))))",
+                                    "type": "If"
+                                },
+                                "MatchedTags": {
+                                    "runAfter": {
+                                        "Apply_Filter": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Select",
+                                    "inputs": {
+                                        "from": "@body('Apply_Filter')",
+                                        "select": "@item()?['tag']"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Check_Fetch": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Initialize_Variables": {
+                            "runAfter": {
+                                "Compose_-_1months": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "RunMode",
+                                        "type": "string",
+                                        "value": "Report"
+                                    },
+                                    {
+                                        "name": "ReportRows",
+                                        "type": "array",
+                                        "value": []
+                                    },
+                                    {
+                                        "name": "CTEM_Tagging_Rules",
+                                        "type": "object",
+                                        "value": {
+                                            "rules": [
+                                                {
+                                                    "tag": "SECAAS_WKS",
+                                                    "assetDomain": "Workplace",
+                                                    "osPlatform": {
+                                                        "startsWith": "Windows10"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_WKS",
+                                                    "assetDomain": "Workplace",
+                                                    "osPlatform": {
+                                                        "startsWith": "Windows11"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_WIN SRV",
+                                                    "assetDomain": "Hybrid cloud Windows",
+                                                    "osPlatform": {
+                                                        "startsWith": "WindowsServer"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_LXS SRV",
+                                                    "assetDomain": "Hybrid cloud Linux/Unix",
+                                                    "osPlatform": {
+                                                        "equals": "Linux"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_LXS SRV",
+                                                    "assetDomain": "Hybrid cloud Linux/Unix",
+                                                    "osPlatform": {
+                                                        "equals": "Ubuntu"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_LXS SRV",
+                                                    "assetDomain": "Hybrid cloud Linux/Unix",
+                                                    "osPlatform": {
+                                                        "equals": "RockyLinux"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_LXS SRV",
+                                                    "assetDomain": "Hybrid cloud Linux/Unix",
+                                                    "osPlatform": {
+                                                        "equals": "CentOS"
+                                                    }
+                                                },
+                                                {
+                                                    "tag": "SECAAS_OTHER",
+                                                    "assetDomain": "Workplace",
+                                                    "osPlatform": {
+                                                        "equals": "iOS"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "name": "CatchAllTag",
+                                        "type": "string",
+                                        "value": "CTEM-CatchAll"
+                                    },
+                                    {
+                                        "name": "ForceFullRun",
+                                        "type": "boolean",
+                                        "value": false
+                                    },
+                                    {
+                                        "name": "FullRunHour",
+                                        "type": "integer",
+                                        "value": 2
+                                    },
+                                    {
+                                        "name": "Machines",
+                                        "type": "array",
+                                        "value": []
+                                    },
+                                    {
+                                        "name": "PageSize",
+                                        "type": "integer",
+                                        "value": 10000
+                                    },
+                                    {
+                                        "name": "Skip",
+                                        "type": "integer",
+                                        "value": 0
+                                    },
+                                    {
+                                        "name": "MorePages",
+                                        "type": "boolean",
+                                        "value": true
+                                    },
+                                    {
+                                        "name": "FetchFailed",
+                                        "type": "boolean",
+                                        "value": false
+                                    },
+                                    {
+                                        "name": "FilterString",
+                                        "type": "string",
+                                        "value": "\"\""
+                                    },
+                                    {
+                                        "name": "ManualTags",
+                                        "type": "array",
+                                        "value": [
+                                            "CTEM_Manual_Workstation",
+                                            "CTEM_Manual_Workstation2"
+                                        ]
+                                    }
+                                ]
+                            }
+                        },
+                        "Create_CSV_table": {
+                            "runAfter": {
+                                "For_Each_Machine": [
+                                    "Succeeded",
+                                    "Failed",
+                                    "TimedOut"
+                                ]
+                            },
+                            "type": "Table",
+                            "inputs": {
+                                "from": "@variables('ReportRows')",
+                                "format": "CSV"
+                            }
+                        },
+                        "Compose_-_1months": {
+                            "runAfter": {},
+                            "type": "Compose",
+                            "inputs": "@addToTime(utcNow(), -1, 'Month')"
+                        },
+                        "IsFullRun": {
+                            "runAfter": {
+                                "TagFilterString": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@or(variables('ForceFullRun'), equals(int(convertFromUtc(coalesce(trigger()?['scheduledTime'], utcNow()), 'Romance Standard Time', 'HH')), variables('FullRunHour')))"
+                        },
+                        "Retagging": {
+                            "actions": {
+                                "FilterString_Without_Tags": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                        "name": "FilterString",
+                                        "value": "lastSeen ge @{outputs('Compose_-_1months')}"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "IsFullRun": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "FilterString_With_Tags": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                            "name": "FilterString",
+                                            "value": "not(machineTags/any@{outputs('TagFilterString')}) and lastSeen ge @{outputs('Compose_-_1months')}"
+                                        }
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@outputs('IsFullRun')",
+                                            true
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "UniqueTags": {
+                            "runAfter": {
+                                "AllTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@union(body('AllTags'), body('AllTags'))"
+                        },
+                        "UniqueTagsWithCatchAll": {
+                            "runAfter": {
+                                "UniqueTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@union(\n  body('AllTags'),\n  array(variables('CatchAllTag'))\n)"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {}
+                    }
+                }
+            }
+        }
+    ]
+}
