@@ -36,6 +36,16 @@ The light run is cheap because Defender only returns the new devices. The Logic 
 
 Only tags listed in the rules, plus the CatchAll tag, are managed. Any other tags on a device are always left alone.
 
+### Why HTTP actions instead of the Defender connector
+
+The Microsoft Defender ATP connector also supports managed identity. We still use plain HTTP actions with managed identity authentication because:
+
+- **No API connection resource.** The connector needs a separate `Microsoft.Web/connections` resource per Logic App. With HTTP, the Logic App is the only resource to deploy, which keeps a future ARM/Bicep template per customer simple.
+- **Reliable paging.** It is not confirmed that the connector's pagination policy works for tenants with more than 10,000 devices. The HTTP version uses its own `$top`/`$skip` loop, so all devices are always fetched.
+- **Same permissions.** Both options need the same Defender API permission on the managed identity (`Grant-DefenderPermissions.ps1`), so the connector gives no advantage there.
+
+The trade-off is that the designer shows a URL and JSON body instead of the connector's form fields.
+
 ## Variables
 
 All variables are in the **Initialize_Variables** action.
@@ -112,6 +122,14 @@ To be run by a Global Administrator or Privileged Role Administrator of the cust
 
 The script grants `Machine.ReadWrite.All` (WindowsDefenderATP) to the identity. It installs the `Microsoft.Graph.Applications` module if needed.
 
+If PowerShell blocks the script (*"running scripts is disabled on this system"*), allow it for the current window only:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+> **Run the script before the first test run.** Managed identity tokens are cached for up to 24 hours. If the Logic App already ran before the permission was granted, it keeps using a token without the role and gets `403 Forbidden` (see Troubleshooting).
+
 ### 5. Set rules and variables
 
 Adjust `CTEM_Tagging_Rules`, `CatchAllTag` and `ManualTags` for the customer. Leave `RunMode` on `Report` for now.
@@ -146,6 +164,9 @@ The report is available as CSV in the **run history**, in the `Create_CSV_table`
 | Error | Cause / fix |
 |---|---|
 | `Could not find member 'connections'` on Save | You pasted the full template file. Paste only `definition` and `parameters` (see step 2). |
-| `401 Unauthorized` / `403 Forbidden` on HTTP actions | The managed identity is not enabled, or the script from step 4 has not been run yet. After granting, it can take up to 30 minutes to take effect. |
+| `401 Unauthorized` on HTTP actions | The managed identity is not enabled (step 3). |
+| `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the Logic App ran before the permission was granted and still uses a cached token (up to 24 hours). Quick fix: Identity → System assigned → **Off** → Save → **On** → Save, run the script again with the **new** Object ID, wait a few minutes, then test. |
+| Check if the permission is assigned | Entra ID → Enterprise applications → filter *Managed Identities* → the Logic App → **Permissions** → should list WindowsDefenderATP `Machine.ReadWrite.All`. |
+| `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first (see step 4). |
 | `429 Too Many Requests` | Defender API rate limit reached. The app retries by itself. With many changes, the run simply takes longer. |
 | Light run still picks up many devices | Those devices don't have a tag from the rules yet. They will be tagged after the next full run. |
