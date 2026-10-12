@@ -132,7 +132,12 @@ If PowerShell blocks the script (*"running scripts is disabled on this system"*)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-> **Wait about 5–10 minutes after running the script before testing.** The new permission needs a few minutes to propagate in Entra ID. Until then the API returns `403 Forbidden` (see Troubleshooting).
+> [!WARNING]
+> **Wait at least 15 minutes after running the script before the first run.** The new permission needs a few minutes to propagate in Entra ID.
+>
+> If the Logic App runs too early, it gets a token **without** the role. Azure runs Logic Apps on multiple servers, and each server caches its own token for **up to 24 hours**. As a result, runs can fail with `403 Forbidden` (`FetchMachinesFailed`) at random for up to 24 hours, even though the permission is set correctly. Some runs succeed, others fail, depending on the server they land on.
+>
+> This resolves itself once the cached tokens expire. Until then, keep `RunMode = Report`, so no tag changes are half applied. Disable the Logic App during setup, so the schedule cannot trigger a run too early.
 
 ### 5. Set rules and variables
 
@@ -169,7 +174,7 @@ The report is available as CSV in the **run history**, in the `Create_CSV_table`
 |---|---|
 | `Could not find member 'connections'` on Save | You pasted the full template file. Paste only `definition` and `parameters` (see step 2). |
 | `401 Unauthorized` on HTTP actions | The managed identity is not enabled (step 3). |
-| Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the permission has not propagated yet (usually ~5 minutes). Wait and run again. In rare cases a token without roles is cached for longer (up to 24 hours). If it still fails after an hour, check the permission (next row). |
+| Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the Logic App ran before the permission had propagated. In the latter case, tokens without the role stay cached on some Azure servers for up to 24 hours, so runs fail at random (some succeed, some fail) until they expire. Check the permission (next row). If it is assigned, wait up to 24 hours. See the warning in step 4. |
 | Check if the permission is assigned | Entra ID → Enterprise applications → filter *Managed Identities* → the Logic App → **Permissions** → should list WindowsDefenderATP `Machine.ReadWrite.All`. |
 | `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first (see step 4). |
 | `429 Too Many Requests` | Defender API rate limit reached. The app retries by itself. With many changes, the run simply takes longer. |
