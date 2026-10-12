@@ -199,33 +199,6 @@
                                 "where": "@not(contains(outputs('DesiredAutoTags'), item()))"
                             }
                         },
-                        "Append_to_ReportRows": {
-                            "runAfter": {
-                                "TagsToRemove": [
-                                    "Succeeded"
-                                ]
-                            },
-                            "type": "AppendToArrayVariable",
-                            "inputs": {
-                                "name": "ReportRows",
-                                "value": {
-                                    "Status": "@{if(or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))), 'Change', 'NoChange')}",
-                                    "MachineId": "@{item()?['id']}",
-                                    "computerDnsName": "@{item()?['computerDnsName']}",
-                                    "osPlatform": "@{item()?['osPlatform']}",
-                                    "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                    "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                    "machineTags": "@{join(coalesce(item()?['machineTags'], json('[]')), ', ')}",
-                                    "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                    "isAadJoined": "@{item()?['isAadJoined']}",
-                                    "managedBy": "@{item()?['managedBy']}",
-                                    "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
-                                    "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
-                                    "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
-                                    "TagToRemove": "@{join(body('TagsToRemove'), ', ')}"
-                                }
-                            }
-                        },
                         "Runmode_-_Tag": {
                             "actions": {
                                 "For_Each_TagToAdd": {
@@ -285,19 +258,127 @@
                                     },
                                     "runAfter": {
                                         "For_Each_TagToAdd": [
-                                            "Succeeded"
+                                            "Succeeded",
+                                            "Failed",
+                                            "TimedOut",
+                                            "Skipped"
                                         ]
                                     },
                                     "type": "Foreach"
+                                },
+                                "TagsAddedOK": {
+                                    "runAfter": {
+                                        "For_Each_TagToRemove": [
+                                            "Succeeded",
+                                            "Failed",
+                                            "TimedOut",
+                                            "Skipped"
+                                        ]
+                                    },
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@result('For_Each_TagToAdd')",
+                                        "where": "@equals(item()?['status'], 'Succeeded')"
+                                    }
+                                },
+                                "TagsRemovedOK": {
+                                    "runAfter": {
+                                        "TagsAddedOK": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Query",
+                                    "inputs": {
+                                        "from": "@result('For_Each_TagToRemove')",
+                                        "where": "@equals(item()?['status'], 'Succeeded')"
+                                    }
+                                },
+                                "TagsAddedOK_Names": {
+                                    "runAfter": {
+                                        "TagsRemovedOK": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Select",
+                                    "inputs": {
+                                        "from": "@body('TagsAddedOK')",
+                                        "select": "@item()?['inputs']?['body']?['Value']"
+                                    }
+                                },
+                                "TagsRemovedOK_Names": {
+                                    "runAfter": {
+                                        "TagsAddedOK_Names": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Select",
+                                    "inputs": {
+                                        "from": "@body('TagsRemovedOK')",
+                                        "select": "@item()?['inputs']?['body']?['Value']"
+                                    }
+                                },
+                                "Append_to_ReportRows_-_Tagged": {
+                                    "runAfter": {
+                                        "TagsRemovedOK_Names": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "AppendToArrayVariable",
+                                    "inputs": {
+                                        "name": "ReportRows",
+                                        "value": {
+                                            "Status": "Change",
+                                            "MachineId": "@{items('For_Each_Machine')?['id']}",
+                                            "computerDnsName": "@{items('For_Each_Machine')?['computerDnsName']}",
+                                            "osPlatform": "@{items('For_Each_Machine')?['osPlatform']}",
+                                            "lastIpAddress": "@{items('For_Each_Machine')?['lastIpAddress']}",
+                                            "rbacGroupName": "@{items('For_Each_Machine')?['rbacGroupName']}",
+                                            "machineTags": "@{join(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), ', ')}",
+                                            "onboardingStatus": "@{items('For_Each_Machine')?['onboardingStatus']}",
+                                            "isAadJoined": "@{items('For_Each_Machine')?['isAadJoined']}",
+                                            "managedBy": "@{items('For_Each_Machine')?['managedBy']}",
+                                            "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                            "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                            "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                            "TagToRemove": "@{join(body('TagsToRemove'), ', ')}",
+                                            "TagAddedSuccess": "@{join(body('TagsAddedOK_Names'), ', ')}",
+                                            "TagRemovedSuccess": "@{join(body('TagsRemovedOK_Names'), ', ')}"
+                                        }
+                                    }
                                 }
                             },
                             "runAfter": {
-                                "Append_to_ReportRows": [
+                                "TagsToRemove": [
                                     "Succeeded"
                                 ]
                             },
                             "else": {
-                                "actions": {}
+                                "actions": {
+                                    "Append_to_ReportRows": {
+                                        "type": "AppendToArrayVariable",
+                                        "inputs": {
+                                            "name": "ReportRows",
+                                            "value": {
+                                                "Status": "@{if(or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))), 'Change', 'NoChange')}",
+                                                "MachineId": "@{items('For_Each_Machine')?['id']}",
+                                                "computerDnsName": "@{items('For_Each_Machine')?['computerDnsName']}",
+                                                "osPlatform": "@{items('For_Each_Machine')?['osPlatform']}",
+                                                "lastIpAddress": "@{items('For_Each_Machine')?['lastIpAddress']}",
+                                                "rbacGroupName": "@{items('For_Each_Machine')?['rbacGroupName']}",
+                                                "machineTags": "@{join(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), ', ')}",
+                                                "onboardingStatus": "@{items('For_Each_Machine')?['onboardingStatus']}",
+                                                "isAadJoined": "@{items('For_Each_Machine')?['isAadJoined']}",
+                                                "managedBy": "@{items('For_Each_Machine')?['managedBy']}",
+                                                "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                                "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                                "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                                "TagToRemove": "@{join(body('TagsToRemove'), ', ')}",
+                                                "TagAddedSuccess": "",
+                                                "TagRemovedSuccess": ""
+                                            }
+                                        }
+                                    }
+                                }
                             },
                             "expression": "@and(contains(variables('RunMode'), 'Tag'), or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))))",
                             "type": "If"
@@ -686,7 +767,9 @@
                 "Create_CSV_table": {
                     "runAfter": {
                         "For_Each_Machine": [
-                            "Succeeded"
+                            "Succeeded",
+                            "Failed",
+                            "TimedOut"
                         ]
                     },
                     "type": "Table",
