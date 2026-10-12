@@ -2,7 +2,7 @@
 
 An Azure Logic App (Consumption) that automatically tags devices in **Microsoft Defender for Endpoint** based on a set of rules, for example per asset domain for CTEM or SECaaS.
 
-- Fetches all devices seen in the last 7 days.
+- Fetches all devices seen in the last month.
 - Determines per device which tags it should have, based on the rules.
 - Adds missing tags and removes tags that no longer apply, only when `RunMode = ReportAndTag`.
 - Builds a CSV report with the current state and the changes per device.

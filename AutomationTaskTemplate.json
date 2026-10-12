@@ -702,7 +702,7 @@
                 "Compose_-_1months": {
                     "runAfter": {},
                     "type": "Compose",
-                    "inputs": "@addToTime(utcNow(), -7, 'Day')"
+                    "inputs": "@addToTime(utcNow(), -1, 'Month')"
                 },
                 "IsFullRun": {
                     "runAfter": {
