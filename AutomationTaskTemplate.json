@@ -57,7 +57,7 @@
                         }
                     },
                     "6B1C2E4A-5D3F-4E8A-9C7B-2F1A0D3E5B6C": {
-                        "content": "RunMode (variable):\n- contains 'Email' -> send CSV report by mail\n- contains 'Tag' -> actually add/remove tags in Defender\nExamples: 'CsvEmail' (report only), 'CsvEmailTag' (report + tagging), 'Tag' (tagging only)",
+                        "content": "RunMode (variable):\n- 'Report' -> only build the report (CSV in run history)\n- 'ReportAndTag' -> report + actually add/remove tags in Defender",
                         "color": "#FFE5CC",
                         "metadata": {
                             "position": {
@@ -65,28 +65,59 @@
                                 "y": 200
                             },
                             "width": 443,
-                            "height": 104
+                            "height": 84
+                        }
+                    },
+                    "9A7E3C21-4B6D-4F0E-8D2A-1C5B7E9F3A40": {
+                        "content": "Full run vs light run:\n- Full run (trigger hour = FullRunHour, or ForceFullRun = true): all machines, tags are corrected\n- Light run (other hours): only machines without an auto, CatchAll or manual tag\nDefender API calls use the system assigned managed identity (needs Machine.ReadWrite.All, see Grant-DefenderPermissions.ps1)",
+                        "color": "#FFE5CC",
+                        "metadata": {
+                            "position": {
+                                "x": 1140,
+                                "y": 120
+                            },
+                            "width": 443,
+                            "height": 124
                         }
                     }
                 }
             },
             "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
             "contentVersion": "1.0.0.0",
-            "parameters": {
-                "$connections": {
-                    "defaultValue": {},
-                    "type": "Object"
-                }
-            },
+            "parameters": {},
             "triggers": {
                 "Recurrence": {
                     "recurrence": {
-                        "interval": 3,
-                        "frequency": "Month"
+                        "interval": 1,
+                        "frequency": "Day",
+                        "timeZone": "Romance Standard Time",
+                        "schedule": {
+                            "hours": [
+                                2,
+                                8,
+                                12,
+                                16
+                            ],
+                            "minutes": [
+                                0
+                            ]
+                        }
                     },
                     "evaluatedRecurrence": {
-                        "interval": 3,
-                        "frequency": "Month"
+                        "interval": 1,
+                        "frequency": "Day",
+                        "timeZone": "Romance Standard Time",
+                        "schedule": {
+                            "hours": [
+                                2,
+                                8,
+                                12,
+                                16
+                            ],
+                            "minutes": [
+                                0
+                            ]
+                        }
                     },
                     "type": "Recurrence"
                 }
@@ -111,35 +142,92 @@
                         ]
                     },
                     "type": "Compose",
-                    "inputs": "@concat('(t: t eq ''', join( outputs('UniqueTags'), ''' or t eq '''), ''')')"
+                    "inputs": "@concat('(t: t eq ''', join(union(outputs('UniqueTagsWithCatchAll'), variables('ManualTags')), ''' or t eq '''), ''')')"
                 },
-                "Machines_-_Get_list_of_machines": {
+                "Get_All_Machines": {
+                    "actions": {
+                        "HTTP_-_Get_machines": {
+                            "type": "Http",
+                            "inputs": {
+                                "method": "GET",
+                                "uri": "https://api.securitycenter.microsoft.com/api/machines",
+                                "queries": {
+                                    "$filter": "@variables('FilterString')",
+                                    "$top": "@{variables('PageSize')}",
+                                    "$skip": "@{variables('Skip')}"
+                                },
+                                "authentication": {
+                                    "type": "ManagedServiceIdentity",
+                                    "audience": "https://api.securitycenter.microsoft.com"
+                                },
+                                "retryPolicy": {
+                                    "type": "exponential",
+                                    "count": 10,
+                                    "interval": "PT1M",
+                                    "maximumInterval": "PT1H"
+                                }
+                            }
+                        },
+                        "MachinesMerged": {
+                            "runAfter": {
+                                "HTTP_-_Get_machines": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@union(variables('Machines'), coalesce(body('HTTP_-_Get_machines')?['value'], json('[]')))"
+                        },
+                        "Set_Machines": {
+                            "runAfter": {
+                                "MachinesMerged": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "Machines",
+                                "value": "@outputs('MachinesMerged')"
+                            }
+                        },
+                        "Next_Page": {
+                            "runAfter": {
+                                "Set_Machines": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "IncrementVariable",
+                            "inputs": {
+                                "name": "Skip",
+                                "value": "@variables('PageSize')"
+                            }
+                        },
+                        "Set_MorePages": {
+                            "runAfter": {
+                                "Next_Page": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "MorePages",
+                                "value": "@equals(length(coalesce(body('HTTP_-_Get_machines')?['value'], json('[]'))), variables('PageSize'))"
+                            }
+                        }
+                    },
                     "runAfter": {
                         "Retagging": [
                             "Succeeded"
                         ]
                     },
-                    "type": "ApiConnection",
-                    "inputs": {
-                        "host": {
-                            "connection": {
-                                "name": "@parameters('$connections')['wdatp-1']['connectionId']"
-                            }
-                        },
-                        "method": "get",
-                        "path": "/api/machines",
-                        "queries": {
-                            "$filter": "@variables('FilterString')"
-                        }
+                    "expression": "@equals(variables('MorePages'), false)",
+                    "limit": {
+                        "count": 100,
+                        "timeout": "PT1H"
                     },
-                    "runtimeConfiguration": {
-                        "paginationPolicy": {
-                            "minimumItemCount": 100000
-                        }
-                    }
+                    "type": "Until"
                 },
                 "For_Each_Machine": {
-                    "foreach": "@body('Machines_-_Get_list_of_machines')?['value']",
+                    "foreach": "@variables('Machines')",
                     "actions": {
                         "Apply_Filter": {
                             "type": "Query",
@@ -204,19 +292,21 @@
                                 "For_Each_TagToAdd": {
                                     "foreach": "@body('TagsToAdd')",
                                     "actions": {
-                                        "Machines_-_Add_tag": {
-                                            "type": "ApiConnection",
+                                        "HTTP_-_Add_tag": {
+                                            "type": "Http",
                                             "inputs": {
-                                                "host": {
-                                                    "connection": {
-                                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
-                                                    }
+                                                "method": "POST",
+                                                "uri": "https://api.securitycenter.microsoft.com/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                "headers": {
+                                                    "Content-Type": "application/json"
                                                 },
-                                                "method": "post",
-                                                "path": "/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
                                                 "body": {
                                                     "Value": "@{item()}",
                                                     "Action": "Add"
+                                                },
+                                                "authentication": {
+                                                    "type": "ManagedServiceIdentity",
+                                                    "audience": "https://api.securitycenter.microsoft.com"
                                                 },
                                                 "retryPolicy": {
                                                     "type": "exponential",
@@ -233,19 +323,21 @@
                                 "For_Each_TagToRemove": {
                                     "foreach": "@body('TagsToRemove')",
                                     "actions": {
-                                        "Machines_-_Remove_tag": {
-                                            "type": "ApiConnection",
+                                        "HTTP_-_Remove_tag": {
+                                            "type": "Http",
                                             "inputs": {
-                                                "host": {
-                                                    "connection": {
-                                                        "name": "@parameters('$connections')['wdatp-1']['connectionId']"
-                                                    }
+                                                "method": "POST",
+                                                "uri": "https://api.securitycenter.microsoft.com/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
+                                                "headers": {
+                                                    "Content-Type": "application/json"
                                                 },
-                                                "method": "post",
-                                                "path": "/api/machines/@{encodeURIComponent(items('For_Each_Machine')?['id'])}/tags",
                                                 "body": {
                                                     "Value": "@{item()}",
                                                     "Action": "Remove"
+                                                },
+                                                "authentication": {
+                                                    "type": "ManagedServiceIdentity",
+                                                    "audience": "https://api.securitycenter.microsoft.com"
                                                 },
                                                 "retryPolicy": {
                                                     "type": "exponential",
@@ -397,7 +489,7 @@
                         }
                     },
                     "runAfter": {
-                        "Machines_-_Get_list_of_machines": [
+                        "Get_All_Machines": [
                             "Succeeded"
                         ]
                     },
@@ -415,7 +507,7 @@
                             {
                                 "name": "RunMode",
                                 "type": "string",
-                                "value": "CsvEmail"
+                                "value": "Report"
                             },
                             {
                                 "name": "ReportRows",
@@ -428,265 +520,59 @@
                                 "value": {
                                     "rules": [
                                         {
-                                            "tag": "CTEM-Workplace",
+                                            "tag": "SECAAS_WKS",
                                             "assetDomain": "Workplace",
-                                            "computerDnsName": {
-                                                "startsWith": "MNS"
-                                            },
                                             "osPlatform": {
-                                                "startsWith": "Windows1"
+                                                "startsWith": "Windows10"
                                             }
                                         },
                                         {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "VWIN"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "WindowsServer"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "DC1"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "WindowsServer"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "DC2"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "WindowsServer"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "VSRV"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "WindowsServer"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "VSRV"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "WindowsServer"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "MSR"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "dc1-fw"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "dc2-fw"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "firewallcheckpointmns"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "msrdc1"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "vapl"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "RNP"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "MANVC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "MANCS"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "MANSC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "Salto"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "osPlatform": {
-                                                "equals": "CiscoXE"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-Mobile",
+                                            "tag": "SECAAS_WKS",
                                             "assetDomain": "Workplace",
-                                            "computerDnsName": {
-                                                "startsWith": "IOS_"
+                                            "osPlatform": {
+                                                "startsWith": "Windows11"
                                             }
                                         },
                                         {
-                                            "tag": "CTEM-Network",
-                                            "assetDomain": "Network",
-                                            "computerDnsName": {
-                                                "startsWith": "vm-fw"
+                                            "tag": "SECAAS_WIN SRV",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
                                             }
                                         },
                                         {
-                                            "tag": "CTEM-LinuxServers",
+                                            "tag": "SECAAS_LXS SRV",
                                             "assetDomain": "Hybrid cloud Linux/Unix",
-                                            "computerDnsName": {
-                                                "startsWith": "vm-sftp"
+                                            "osPlatform": {
+                                                "equals": "Linux"
                                             }
                                         },
                                         {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "vm-ad"
+                                            "tag": "SECAAS_LXS SRV",
+                                            "assetDomain": "Hybrid cloud Linux/Unix",
+                                            "osPlatform": {
+                                                "equals": "Ubuntu"
                                             }
                                         },
                                         {
-                                            "tag": "CTEM-Workplace",
+                                            "tag": "SECAAS_LXS SRV",
+                                            "assetDomain": "Hybrid cloud Linux/Unix",
+                                            "osPlatform": {
+                                                "equals": "RockyLinux"
+                                            }
+                                        },
+                                        {
+                                            "tag": "SECAAS_LXS SRV",
+                                            "assetDomain": "Hybrid cloud Linux/Unix",
+                                            "osPlatform": {
+                                                "equals": "CentOS"
+                                            }
+                                        },
+                                        {
+                                            "tag": "SECAAS_OTHER",
                                             "assetDomain": "Workplace",
-                                            "computerDnsName": {
-                                                "startsWith": "MNS"
-                                            },
                                             "osPlatform": {
-                                                "startsWith": "Windows"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "HASVC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "HASCS"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "HASSC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "ANTVC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "ANTCS"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "ANTSC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "DC1"
-                                            },
-                                            "osPlatform": {
-                                                "startsWith": "Windows"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "MANTC"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "Healthy-Home-Coach"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-IOT",
-                                            "assetDomain": "IOT",
-                                            "computerDnsName": {
-                                                "startsWith": "TLSMNS"
-                                            }
-                                        },
-                                        {
-                                            "tag": "CTEM-WindowsServers",
-                                            "assetDomain": "Hybrid cloud Windows",
-                                            "computerDnsName": {
-                                                "startsWith": "vmirdapmns"
+                                                "equals": "iOS"
                                             }
                                         }
                                     ]
@@ -698,7 +584,32 @@
                                 "value": "CTEM-CatchAll"
                             },
                             {
-                                "name": "Retagging",
+                                "name": "ForceFullRun",
+                                "type": "boolean",
+                                "value": false
+                            },
+                            {
+                                "name": "FullRunHour",
+                                "type": "integer",
+                                "value": 2
+                            },
+                            {
+                                "name": "Machines",
+                                "type": "array",
+                                "value": []
+                            },
+                            {
+                                "name": "PageSize",
+                                "type": "integer",
+                                "value": 10000
+                            },
+                            {
+                                "name": "Skip",
+                                "type": "integer",
+                                "value": 0
+                            },
+                            {
+                                "name": "MorePages",
                                 "type": "boolean",
                                 "value": true
                             },
@@ -717,52 +628,6 @@
                             }
                         ]
                     }
-                },
-                "Runmode_-_Email": {
-                    "actions": {
-                        "Send_Email_(V3)": {
-                            "type": "ApiConnection",
-                            "inputs": {
-                                "host": {
-                                    "connection": {
-                                        "name": "@parameters('$connections')['smtp']['connectionId']"
-                                    }
-                                },
-                                "method": "post",
-                                "body": {
-                                    "Attachments": [
-                                        {
-                                            "ContentData": "@base64(body('Create_CSV_table'))",
-                                            "FileName": "NewTags.csv"
-                                        }
-                                    ],
-                                    "To": "kristof.vermaelen.ext@proximusnxt.com",
-                                    "Subject": "CTEM : New proposed taggings",
-                                    "Body": "<p class=\"editor-paragraph\">In bijlage de nieuwe voorgestelde tags</p>"
-                                },
-                                "path": "/SendEmailV3"
-                            }
-                        }
-                    },
-                    "runAfter": {
-                        "Create_CSV_table": [
-                            "Succeeded"
-                        ]
-                    },
-                    "else": {
-                        "actions": {}
-                    },
-                    "expression": {
-                        "and": [
-                            {
-                                "contains": [
-                                    "@variables('RunMode')",
-                                    "Email"
-                                ]
-                            }
-                        ]
-                    },
-                    "type": "If"
                 },
                 "Create_CSV_table": {
                     "runAfter": {
@@ -783,6 +648,15 @@
                     "type": "Compose",
                     "inputs": "@addToTime(utcNow(), -7, 'Day')"
                 },
+                "IsFullRun": {
+                    "runAfter": {
+                        "TagFilterString": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Compose",
+                    "inputs": "@or(variables('ForceFullRun'), equals(int(convertFromUtc(coalesce(trigger()?['scheduledTime'], utcNow()), 'Romance Standard Time', 'HH')), variables('FullRunHour')))"
+                },
                 "Retagging": {
                     "actions": {
                         "FilterString_Without_Tags": {
@@ -794,7 +668,7 @@
                         }
                     },
                     "runAfter": {
-                        "TagFilterString": [
+                        "IsFullRun": [
                             "Succeeded"
                         ]
                     },
@@ -813,7 +687,7 @@
                         "and": [
                             {
                                 "equals": [
-                                    "@variables('Retagging')",
+                                    "@outputs('IsFullRun')",
                                     true
                                 ]
                             }
@@ -843,17 +717,6 @@
             "outputs": {}
         },
         "parameters": {},
-        "connections": {
-            "wdatp-1": {
-                "id": "/subscriptions/0000-0000/providers/Microsoft.Web/locations/northeurope/managedApis/wdatp",
-                "connectionId": "",
-                "connectionName": ""
-            },
-            "smtp": {
-                "id": "/subscriptions/0000-0000/providers/Microsoft.Web/locations/northeurope/managedApis/smtp",
-                "connectionId": "",
-                "connectionName": ""
-            }
-        }
+        "connections": {}
     }
 }
