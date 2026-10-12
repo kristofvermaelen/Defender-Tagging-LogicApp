@@ -1,0 +1,773 @@
+{
+    "id": "Defeder-Tagging-LogicApp",
+    "title": "Defeder-Tagging-LogicApp",
+    "description": "Defeder-Tagging-LogicApp\n",
+    "iconType": "ScheduledTask",
+    "skuType": "Consumption",
+    "data": {
+        "definition": {
+            "metadata": {
+                "notes": {
+                    "1FF72097-7D33-4D35-942B-C482DCAF5507": {
+                        "content": "Create a filter string to filter out all Tags from UniqueTags.\nThis filterstring can be used when pulling all assets",
+                        "color": "#CCE5FF",
+                        "metadata": {
+                            "position": {
+                                "x": 660,
+                                "y": 580
+                            },
+                            "width": 444,
+                            "height": 64
+                        }
+                    },
+                    "F553592E-91B0-4B9B-9114-A29380312BF0": {
+                        "content": "Get All Tags from the Variable CTEM_Tagging_Rules",
+                        "color": "#CCE5FF",
+                        "metadata": {
+                            "position": {
+                                "x": 660,
+                                "y": 340
+                            },
+                            "width": 443,
+                            "height": 44
+                        }
+                    },
+                    "731481E9-4A58-4169-845B-E8CB9D4B509E": {
+                        "content": "Only keep the Unique Tags from AllTags",
+                        "color": "#CCE5FF",
+                        "metadata": {
+                            "position": {
+                                "x": 640,
+                                "y": 460
+                            },
+                            "width": 443,
+                            "height": 44
+                        }
+                    },
+                    "3D4D017A-ADD0-44FA-912A-09EF9645598B": {
+                        "content": "TimeRange used in Defender API when pulling all assets",
+                        "color": "#CCE5FF",
+                        "metadata": {
+                            "position": {
+                                "x": 680,
+                                "y": 120
+                            },
+                            "width": 416,
+                            "height": 44
+                        }
+                    }
+                }
+            },
+            "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+                "$connections": {
+                    "defaultValue": {},
+                    "type": "Object"
+                }
+            },
+            "triggers": {
+                "Recurrence": {
+                    "recurrence": {
+                        "interval": 3,
+                        "frequency": "Month"
+                    },
+                    "evaluatedRecurrence": {
+                        "interval": 3,
+                        "frequency": "Month"
+                    },
+                    "type": "Recurrence"
+                }
+            },
+            "actions": {
+                "AllTags": {
+                    "runAfter": {
+                        "Initialize_Variables": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Select",
+                    "inputs": {
+                        "from": "@variables('CTEM_Tagging_Rules')?['rules']",
+                        "select": "@item()?['tag']"
+                    }
+                },
+                "TagFilterString": {
+                    "runAfter": {
+                        "UniqueTagsWithCatchAll": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Compose",
+                    "inputs": "@concat('(t: t eq ''', join( outputs('UniqueTags'), ''' or t eq '''), ''')')"
+                },
+                "Machines_-_Get_list_of_machines": {
+                    "runAfter": {
+                        "Retagging": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "ApiConnection",
+                    "inputs": {
+                        "host": {
+                            "connection": {
+                                "name": "@parameters('$connections')['wdatp-1']['connectionId']"
+                            }
+                        },
+                        "method": "get",
+                        "path": "/api/machines",
+                        "queries": {
+                            "$filter": "@variables('FilterString')"
+                        }
+                    }
+                },
+                "For_Each_Machine": {
+                    "foreach": "@body('Machines_-_Get_list_of_machines')?['value']",
+                    "actions": {
+                        "Apply_Filter": {
+                            "type": "Query",
+                            "inputs": {
+                                "from": "@variables('CTEM_Tagging_Rules')?['rules']",
+                                "where": "@and(\n  or(empty(item()?['computerDnsName']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['contains'], '')))),\n  or(empty(item()?['computerDnsName']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['startsWith'], '')))),\n  or(empty(item()?['computerDnsName']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['computerDnsName'], '')), toLower(coalesce(item()?['computerDnsName']?['endsWith'], '')))),\n\n  or(empty(item()?['osPlatform']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['contains'], '')))),\n  or(empty(item()?['osPlatform']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['startsWith'], '')))),\n  or(empty(item()?['osPlatform']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['endsWith'], '')))),\n  or(empty(item()?['osPlatform']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['osPlatform'], '')), toLower(coalesce(item()?['osPlatform']?['equals'], '')))),\n\n  or(empty(item()?['lastIpAddress']?['startsWith']), startsWith(coalesce(items('For_Each_Machine')?['lastIpAddress'], ''), coalesce(item()?['lastIpAddress']?['startsWith'], ''))),\n\n  or(empty(item()?['rbacGroupName']?['contains']), contains(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['contains'], '')))),\n  or(empty(item()?['rbacGroupName']?['startsWith']), startsWith(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['startsWith'], '')))),\n  or(empty(item()?['rbacGroupName']?['endsWith']), endsWith(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['endsWith'], '')))),\n  or(empty(item()?['rbacGroupName']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['rbacGroupName'], '')), toLower(coalesce(item()?['rbacGroupName']?['equals'], '')))),\n\n  or(empty(item()?['machineTags']?['equals']), contains(coalesce(items('For_Each_Machine')?['machineTags'], json('[]')), item()?['machineTags']?['equals'])),\n\n  or(empty(item()?['onboardingStatus']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['onboardingStatus'], '')), toLower(coalesce(item()?['onboardingStatus']?['equals'], '')))),\n\n  or(empty(item()?['managedBy']?['equals']), equals(toLower(coalesce(items('For_Each_Machine')?['managedBy'], '')), toLower(coalesce(item()?['managedBy']?['equals'], '')))),\n  or(equals(item()?['isAadJoined']?['equals'], null),equals(items('For_Each_Machine')?['isAadJoined'],item()?['isAadJoined']?['equals']))\n)"
+                            }
+                        },
+                        "ExistingAutoTags": {
+                            "runAfter": {
+                                "ExistingManualTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@intersection(\n  coalesce(item()?['machineTags'], json('[]')),\n  outputs('UniqueTagsWithCatchAll')\n)"
+                        },
+                        "ExistingManualTags": {
+                            "runAfter": {
+                                "MatchedTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose",
+                            "inputs": "@intersection(\n  coalesce(item()?['machineTags'], json('[]')),\n  variables('ManualTags')\n)"
+                        },
+                        "NoManualTagPresent": {
+                            "actions": {
+                                "Did_Filter_Matched": {
+                                    "actions": {
+                                        "AllReadytagged": {
+                                            "actions": {
+                                                "Append_to_array_variable-copy_1": {
+                                                    "type": "AppendToArrayVariable",
+                                                    "inputs": {
+                                                        "name": "ReportRows",
+                                                        "value": {
+                                                            "MachineId": "@{item()?['id']}",
+                                                            "computerDnsName": "@{item()?['computerDnsName']}",
+                                                            "osPlatform": "@{item()?['osPlatform']}",
+                                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                                            "machineTags": "@{item()?['machineTags']}",
+                                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                                            "isAadJoined": "@{item()?['isAadJoined']}",
+                                                            "managedBy": "@{item()?['managedBy']}",
+                                                            "Manualtags": "",
+                                                            "ExistingTags": "@{outputs('ExistingAutoTags')}",
+                                                            "TagToAdd": "@{join(\n  union(body('MatchedTags'), body('MatchedTags')),\n  ', '\n)}",
+                                                            "TagToRemove": "ietsmoetweg"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "else": {
+                                                "actions": {
+                                                    "Append_to_array_variable": {
+                                                        "type": "AppendToArrayVariable",
+                                                        "inputs": {
+                                                            "name": "ReportRows",
+                                                            "value": {
+                                                                "MachineId": "@{item()?['id']}",
+                                                                "computerDnsName": "@{item()?['computerDnsName']}",
+                                                                "osPlatform": "@{item()?['osPlatform']}",
+                                                                "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                                                "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                                                "machineTags": "@{item()?['machineTags']}",
+                                                                "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                                                "isAadJoined": "@{item()?['isAadJoined']}",
+                                                                "managedBy": "@{item()?['managedBy']}",
+                                                                "Manualtags": "",
+                                                                "ExistingTags": "",
+                                                                "TagToAdd": "@{join(\n  union(body('MatchedTags'), body('MatchedTags')),\n  ', '\n)}",
+                                                                "TagToRemove": ""
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "expression": "@not(empty(body('ExistingAutoTags')))",
+                                            "type": "If"
+                                        }
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Append_to_array_-_Catchall": {
+                                                "type": "AppendToArrayVariable",
+                                                "inputs": {
+                                                    "name": "ReportRows",
+                                                    "value": {
+                                                        "MachineId": "@{item()?['id']}",
+                                                        "computerDnsName": "@{item()?['computerDnsName']}",
+                                                        "osPlatform": "@{item()?['osPlatform']}",
+                                                        "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                                        "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                                        "machineTags": "@{item()?['machineTags']}",
+                                                        "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                                        "isAadJoined": "@{item()?['isAadJoined']}",
+                                                        "managedBy": "@{item()?['managedBy']}",
+                                                        "Manualtags": "",
+                                                        "ExistingTags": "",
+                                                        "TagToAdd": "@{variables('CatchAllTag')}",
+                                                        "TagToRemove": ""
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "expression": "@not(empty(body('Apply_Filter')))",
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "ExistingAutoTags": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "AutoTagNOTPresent": {
+                                        "actions": {
+                                            "Append_to_array_variable-copy": {
+                                                "type": "AppendToArrayVariable",
+                                                "inputs": {
+                                                    "name": "ReportRows",
+                                                    "value": {
+                                                        "MachineId": "@{item()?['id']}",
+                                                        "computerDnsName": "@{item()?['computerDnsName']}",
+                                                        "osPlatform": "@{item()?['osPlatform']}",
+                                                        "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                                        "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                                        "machineTags": "@{item()?['machineTags']}",
+                                                        "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                                        "isAadJoined": "@{item()?['isAadJoined']}",
+                                                        "managedBy": "@{item()?['managedBy']}",
+                                                        "Manualtags": "@{outputs('ExistingManualTags')}",
+                                                        "ExistingTags": "",
+                                                        "TagToAdd": "",
+                                                        "TagToRemove": ""
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "else": {
+                                            "actions": {
+                                                "Append_to_array_-_Catchall-copy": {
+                                                    "type": "AppendToArrayVariable",
+                                                    "inputs": {
+                                                        "name": "ReportRows",
+                                                        "value": {
+                                                            "MachineId": "@{item()?['id']}",
+                                                            "computerDnsName": "@{item()?['computerDnsName']}",
+                                                            "osPlatform": "@{item()?['osPlatform']}",
+                                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                                            "machineTags": "@{item()?['machineTags']}",
+                                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                                            "isAadJoined": "@{item()?['isAadJoined']}",
+                                                            "managedBy": "@{item()?['managedBy']}",
+                                                            "Manualtags": "@{outputs('ExistingManualTags')}",
+                                                            "ExistingTags": "@{outputs('ExistingAutoTags')}",
+                                                            "TagToAdd": "",
+                                                            "TagToRemove": "@{outputs('ExistingAutoTags')}"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "expression": "@not(empty(body('ExistingAutoTags')))",
+                                        "type": "If"
+                                    }
+                                }
+                            },
+                            "expression": "@empty(outputs('ExistingManualTags'))",
+                            "type": "If"
+                        },
+                        "MatchedTags": {
+                            "runAfter": {
+                                "Apply_Filter": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Select",
+                            "inputs": {
+                                "from": "@body('Apply_Filter')",
+                                "select": "@item()?['tag']"
+                            }
+                        }
+                    },
+                    "runAfter": {
+                        "Machines_-_Get_list_of_machines": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Foreach"
+                },
+                "Initialize_Variables": {
+                    "runAfter": {
+                        "Compose_-_1months": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "InitializeVariable",
+                    "inputs": {
+                        "variables": [
+                            {
+                                "name": "RunMode",
+                                "type": "string",
+                                "value": "CsvEmail"
+                            },
+                            {
+                                "name": "ReportRows",
+                                "type": "array",
+                                "value": []
+                            },
+                            {
+                                "name": "CTEM_Tagging_Rules",
+                                "type": "object",
+                                "value": {
+                                    "rules": [
+                                        {
+                                            "tag": "CTEM-Workplace",
+                                            "assetDomain": "Workplace",
+                                            "computerDnsName": {
+                                                "startsWith": "MNS"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "Windows1"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "VWIN"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "DC1"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "DC2"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "VSRV"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "VSRV"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "WindowsServer"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "MSR"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "dc1-fw"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "dc2-fw"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "firewallcheckpointmns"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "msrdc1"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "vapl"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "RNP"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "MANVC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "MANCS"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "MANSC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "Salto"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "osPlatform": {
+                                                "equals": "CiscoXE"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Mobile",
+                                            "assetDomain": "Workplace",
+                                            "computerDnsName": {
+                                                "startsWith": "IOS_"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Network",
+                                            "assetDomain": "Network",
+                                            "computerDnsName": {
+                                                "startsWith": "vm-fw"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-LinuxServers",
+                                            "assetDomain": "Hybrid cloud Linux/Unix",
+                                            "computerDnsName": {
+                                                "startsWith": "vm-sftp"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "vm-ad"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-Workplace",
+                                            "assetDomain": "Workplace",
+                                            "computerDnsName": {
+                                                "startsWith": "MNS"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "Windows"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "HASVC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "HASCS"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "HASSC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "ANTVC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "ANTCS"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "ANTSC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "DC1"
+                                            },
+                                            "osPlatform": {
+                                                "startsWith": "Windows"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "MANTC"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "Healthy-Home-Coach"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-IOT",
+                                            "assetDomain": "IOT",
+                                            "computerDnsName": {
+                                                "startsWith": "TLSMNS"
+                                            }
+                                        },
+                                        {
+                                            "tag": "CTEM-WindowsServers",
+                                            "assetDomain": "Hybrid cloud Windows",
+                                            "computerDnsName": {
+                                                "startsWith": "vmirdapmns"
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "name": "CatchAllTag",
+                                "type": "string",
+                                "value": "CTEM-CatchAll"
+                            },
+                            {
+                                "name": "Retagging",
+                                "type": "boolean",
+                                "value": true
+                            },
+                            {
+                                "name": "FilterString",
+                                "type": "string",
+                                "value": "\"\""
+                            },
+                            {
+                                "name": "ManualTags",
+                                "type": "array",
+                                "value": [
+                                    "CTEM_Manual_Workstation",
+                                    "CTEM_Manual_Workstation2"
+                                ]
+                            }
+                        ]
+                    }
+                },
+                "Runmode_-_Email": {
+                    "actions": {
+                        "Send_Email_(V3)": {
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['smtp']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "body": {
+                                    "Attachments": [
+                                        {
+                                            "ContentData": "@base64(body('Create_CSV_table'))",
+                                            "FileName": "NewTags.csv"
+                                        }
+                                    ],
+                                    "To": "kristof.vermaelen.ext@proximusnxt.com",
+                                    "Subject": "CTEM : New proposed taggings",
+                                    "Body": "<p class=\"editor-paragraph\">In bijlage de nieuwe voorgestelde tags</p>"
+                                },
+                                "path": "/SendEmailV3"
+                            }
+                        }
+                    },
+                    "runAfter": {
+                        "Create_CSV_table": [
+                            "Succeeded"
+                        ]
+                    },
+                    "else": {
+                        "actions": {}
+                    },
+                    "expression": {
+                        "and": [
+                            {
+                                "contains": [
+                                    "@variables('RunMode')",
+                                    "Email"
+                                ]
+                            }
+                        ]
+                    },
+                    "type": "If"
+                },
+                "Create_CSV_table": {
+                    "runAfter": {
+                        "For_Each_Machine": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Table",
+                    "inputs": {
+                        "from": "@variables('ReportRows')",
+                        "format": "CSV"
+                    }
+                },
+                "Compose_-_1months": {
+                    "runAfter": {},
+                    "type": "Compose",
+                    "inputs": "@addToTime(utcNow(), -7, 'Day')"
+                },
+                "Retagging": {
+                    "actions": {
+                        "FilterString_Without_Tags": {
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "FilterString",
+                                "value": "lastSeen ge @{outputs('Compose_-_1months')}"
+                            }
+                        }
+                    },
+                    "runAfter": {
+                        "TagFilterString": [
+                            "Succeeded"
+                        ]
+                    },
+                    "else": {
+                        "actions": {
+                            "FilterString_With_Tags": {
+                                "type": "SetVariable",
+                                "inputs": {
+                                    "name": "FilterString",
+                                    "value": "not(machineTags/any@{outputs('TagFilterString')}) and lastSeen ge @{outputs('Compose_-_1months')}"
+                                }
+                            }
+                        }
+                    },
+                    "expression": {
+                        "and": [
+                            {
+                                "equals": [
+                                    "@variables('Retagging')",
+                                    true
+                                ]
+                            }
+                        ]
+                    },
+                    "type": "If"
+                },
+                "UniqueTags": {
+                    "runAfter": {
+                        "AllTags": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Compose",
+                    "inputs": "@union(body('AllTags'), body('AllTags'))"
+                },
+                "UniqueTagsWithCatchAll": {
+                    "runAfter": {
+                        "UniqueTags": [
+                            "Succeeded"
+                        ]
+                    },
+                    "type": "Compose",
+                    "inputs": "@union(\n  body('AllTags'),\n  array(variables('CatchAllTag'))\n)"
+                }
+            },
+            "outputs": {}
+        },
+        "parameters": {},
+        "connections": {
+            "wdatp-1": {
+                "id": "/subscriptions/0000-0000/providers/Microsoft.Web/locations/northeurope/managedApis/wdatp",
+                "connectionId": "",
+                "connectionName": ""
+            },
+            "smtp": {
+                "id": "/subscriptions/0000-0000/providers/Microsoft.Web/locations/northeurope/managedApis/smtp",
+                "connectionId": "",
+                "connectionName": ""
+            }
+        }
+    }
+}
