@@ -28,6 +28,10 @@ The app runs every day at **02:00, 08:00, 12:00 and 16:00** (Belgian time, `Roma
 
 The light run is cheap because Defender only returns the new devices. The Logic App is billed per executed action, so every run over all devices costs money.
 
+### Fetching devices
+
+Devices are fetched in pages of `PageSize` (10,000) with `$top`/`$skip` until a page returns fewer devices. If a call to the Defender API fails (after the retry policy), paging stops and the run ends as **Failed** with error `FetchMachinesFailed`, so no partial report is created.
+
 ### Tag logic per device
 
 1. **Manual tag present** (a tag from `ManualTags`): the device gets **no** auto tags. Existing auto tags are removed.
@@ -59,7 +63,7 @@ All variables are in the **Initialize_Variables** action.
 | `FullRunHour` | `2` | Hour (Belgian time) of the full run. Must be one of the scheduled hours. |
 | `ForceFullRun` | `false` | `true` = every run is a full run. Useful for manual testing. |
 | `PageSize` | `10000` | Number of devices per API call (Defender API maximum) |
-| `Machines`, `Skip`, `MorePages`, `FilterString`, `ReportRows` | | Internal, do not change |
+| `Machines`, `Skip`, `MorePages`, `FetchFailed`, `FilterString`, `ReportRows` | | Internal, do not change |
 
 ## Writing rules
 
@@ -128,7 +132,7 @@ If PowerShell blocks the script (*"running scripts is disabled on this system"*)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-> **Run the script before the first test run.** Managed identity tokens are cached for up to 24 hours. If the Logic App already ran before the permission was granted, it keeps using a token without the role and gets `403 Forbidden` (see Troubleshooting).
+> **Wait about 5–10 minutes after running the script before testing.** The new permission needs a few minutes to propagate in Entra ID. Until then the API returns `403 Forbidden` (see Troubleshooting).
 
 ### 5. Set rules and variables
 
@@ -165,7 +169,7 @@ The report is available as CSV in the **run history**, in the `Create_CSV_table`
 |---|---|
 | `Could not find member 'connections'` on Save | You pasted the full template file. Paste only `definition` and `parameters` (see step 2). |
 | `401 Unauthorized` on HTTP actions | The managed identity is not enabled (step 3). |
-| `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the Logic App ran before the permission was granted and still uses a cached token (up to 24 hours). Quick fix: Identity → System assigned → **Off** → Save → **On** → Save, run the script again with the **new** Object ID, wait a few minutes, then test. |
+| Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 4 was not run, or the permission has not propagated yet (usually ~5 minutes). Wait and run again. In rare cases a token without roles is cached for longer (up to 24 hours). If it still fails after an hour, check the permission (next row). |
 | Check if the permission is assigned | Entra ID → Enterprise applications → filter *Managed Identities* → the Logic App → **Permissions** → should list WindowsDefenderATP `Machine.ReadWrite.All`. |
 | `running scripts is disabled on this system` | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first (see step 4). |
 | `429 Too Many Requests` | Defender API rate limit reached. The app retries by itself. With many changes, the run simply takes longer. |

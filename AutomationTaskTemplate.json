@@ -212,6 +212,31 @@
                                 "name": "MorePages",
                                 "value": "@equals(length(coalesce(body('HTTP_-_Get_machines')?['value'], json('[]'))), variables('PageSize'))"
                             }
+                        },
+                        "Set_FetchFailed": {
+                            "runAfter": {
+                                "HTTP_-_Get_machines": [
+                                    "Failed",
+                                    "TimedOut"
+                                ]
+                            },
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "FetchFailed",
+                                "value": true
+                            }
+                        },
+                        "Stop_Paging": {
+                            "runAfter": {
+                                "Set_FetchFailed": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "SetVariable",
+                            "inputs": {
+                                "name": "MorePages",
+                                "value": false
+                            }
                         }
                     },
                     "runAfter": {
@@ -225,6 +250,32 @@
                         "timeout": "PT1H"
                     },
                     "type": "Until"
+                },
+                "Check_Fetch": {
+                    "actions": {
+                        "Terminate_-_Fetch_failed": {
+                            "type": "Terminate",
+                            "inputs": {
+                                "runStatus": "Failed",
+                                "runError": {
+                                    "code": "FetchMachinesFailed",
+                                    "message": "Could not fetch machines from the Defender API. Check the output of 'HTTP - Get machines' (403 = managed identity has no Machine.ReadWrite.All yet)."
+                                }
+                            }
+                        }
+                    },
+                    "runAfter": {
+                        "Get_All_Machines": [
+                            "Succeeded",
+                            "Failed",
+                            "TimedOut"
+                        ]
+                    },
+                    "else": {
+                        "actions": {}
+                    },
+                    "expression": "@variables('FetchFailed')",
+                    "type": "If"
                 },
                 "For_Each_Machine": {
                     "foreach": "@variables('Machines')",
@@ -489,7 +540,7 @@
                         }
                     },
                     "runAfter": {
-                        "Get_All_Machines": [
+                        "Check_Fetch": [
                             "Succeeded"
                         ]
                     },
@@ -612,6 +663,11 @@
                                 "name": "MorePages",
                                 "type": "boolean",
                                 "value": true
+                            },
+                            {
+                                "name": "FetchFailed",
+                                "type": "boolean",
+                                "value": false
                             },
                             {
                                 "name": "FilterString",
