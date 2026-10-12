@@ -187,42 +187,34 @@
                                 "where": "@not(contains(outputs('DesiredAutoTags'), item()))"
                             }
                         },
-                        "HasTagChanges": {
-                            "actions": {
-                                "Append_to_ReportRows": {
-                                    "type": "AppendToArrayVariable",
-                                    "inputs": {
-                                        "name": "ReportRows",
-                                        "value": {
-                                            "MachineId": "@{item()?['id']}",
-                                            "computerDnsName": "@{item()?['computerDnsName']}",
-                                            "osPlatform": "@{item()?['osPlatform']}",
-                                            "lastIpAddress": "@{item()?['lastIpAddress']}",
-                                            "rbacGroupName": "@{item()?['rbacGroupName']}",
-                                            "machineTags": "@{join(coalesce(item()?['machineTags'], json('[]')), ', ')}",
-                                            "onboardingStatus": "@{item()?['onboardingStatus']}",
-                                            "isAadJoined": "@{item()?['isAadJoined']}",
-                                            "managedBy": "@{item()?['managedBy']}",
-                                            "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
-                                            "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
-                                            "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
-                                            "TagToRemove": "@{join(body('TagsToRemove'), ', ')}"
-                                        }
-                                    }
-                                }
-                            },
+                        "Append_to_ReportRows": {
                             "runAfter": {
                                 "TagsToRemove": [
                                     "Succeeded"
                                 ]
                             },
-                            "else": {
-                                "actions": {}
-                            },
-                            "expression": "@or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove'))))",
-                            "type": "If"
+                            "type": "AppendToArrayVariable",
+                            "inputs": {
+                                "name": "ReportRows",
+                                "value": {
+                                    "Status": "@{if(or(not(empty(body('TagsToAdd'))), not(empty(body('TagsToRemove')))), 'Change', 'NoChange')}",
+                                    "MachineId": "@{item()?['id']}",
+                                    "computerDnsName": "@{item()?['computerDnsName']}",
+                                    "osPlatform": "@{item()?['osPlatform']}",
+                                    "lastIpAddress": "@{item()?['lastIpAddress']}",
+                                    "rbacGroupName": "@{item()?['rbacGroupName']}",
+                                    "machineTags": "@{join(coalesce(item()?['machineTags'], json('[]')), ', ')}",
+                                    "onboardingStatus": "@{item()?['onboardingStatus']}",
+                                    "isAadJoined": "@{item()?['isAadJoined']}",
+                                    "managedBy": "@{item()?['managedBy']}",
+                                    "Manualtags": "@{join(outputs('ExistingManualTags'), ', ')}",
+                                    "ExistingTags": "@{join(outputs('ExistingAutoTags'), ', ')}",
+                                    "TagToAdd": "@{join(body('TagsToAdd'), ', ')}",
+                                    "TagToRemove": "@{join(body('TagsToRemove'), ', ')}"
+                                }
+                            }
                         },
-"MatchedTags": {
+                        "MatchedTags": {
                             "runAfter": {
                                 "Apply_Filter": [
                                     "Succeeded"
