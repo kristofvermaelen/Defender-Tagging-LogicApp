@@ -12,10 +12,10 @@ An Azure Logic App (Consumption) that automatically tags devices in **Microsoft 
 
 | File | Contents |
 |---|---|
-| `template.json` | ARM template of the Logic App. **This is the main file.** |
-| `parameters.example.json` | Example parameter file. Copy it per customer. |
+| `azuredeploy.json` | ARM template of the Logic App. **This is the main file.** |
+| `azuredeploy.parameters.example.json` | Example parameter file. Copy it per customer. |
 | `Grant-DefenderPermissions.ps1` | Grants the Defender API permissions to the managed identity (once per tenant) |
-| `automation-task/AutomationTaskTemplate.json` | Same workflow in Azure automation task template format. Kept for reference, not kept in sync with `template.json`. |
+| `automation-task/AutomationTaskTemplate.json` | Same workflow in Azure automation task template format. Kept for reference, not kept in sync with `azuredeploy.json`. |
 
 ## How it works
 
@@ -113,7 +113,7 @@ Possible `osPlatform` values include: `Windows10`, `Windows11`, `WindowsServer20
 
 ### 1. Prepare the parameter file
 
-Copy `parameters.example.json` to e.g. `customerX.parameters.json` and set the name, rules and tags for the customer. Leave `state` on `Disabled` and `runMode` on `Report`.
+Copy `azuredeploy.parameters.example.json` to e.g. `customerX.azuredeploy.parameters.json` and set the name, rules and tags for the customer. Leave `state` on `Disabled` and `runMode` on `Report`.
 
 > Customer parameter files contain customer-specific names. Keep them out of public repositories.
 
@@ -123,17 +123,17 @@ Copy `parameters.example.json` to e.g. `customerX.parameters.json` and set the n
 
 ```powershell
 az login --tenant <tenant>.onmicrosoft.com
-az deployment group create -g <resource-group> --template-file template.json --parameters customerX.parameters.json --query properties.outputs.principalId.value -o tsv
+az deployment group create -g <resource-group> --template-file azuredeploy.json --parameters customerX.azuredeploy.parameters.json --query properties.outputs.principalId.value -o tsv
 ```
 
 **Azure PowerShell:**
 
 ```powershell
 Connect-AzAccount -Tenant <tenant>.onmicrosoft.com
-(New-AzResourceGroupDeployment -ResourceGroupName <resource-group> -TemplateFile template.json -TemplateParameterFile customerX.parameters.json).Outputs.principalId.Value
+(New-AzResourceGroupDeployment -ResourceGroupName <resource-group> -TemplateFile azuredeploy.json -TemplateParameterFile customerX.azuredeploy.parameters.json).Outputs.principalId.Value
 ```
 
-**Portal:** search for **Deploy a custom template** → **Build your own template in the editor** → **Load file** → `template.json` → **Save**. Fill in the parameters (or **Edit parameters** → **Load file** → your parameter file) → **Review + create**. The Object ID is shown under **Outputs** of the deployment.
+**Portal:** search for **Deploy a custom template** → **Build your own template in the editor** → **Load file** → `azuredeploy.json` → **Save**. Fill in the parameters (or **Edit parameters** → **Load file** → your parameter file) → **Review + create**. The Object ID is shown under **Outputs** of the deployment.
 
 All three return the **Object (principal) ID** of the managed identity. You can also find it in the Logic App → **Identity** → **System assigned**.
 
@@ -171,7 +171,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 If the report looks right, set `runMode` to `ReportAndTag` in the parameter file and deploy again (step 2, with `state` set to `Enabled`).
 
-> Redeploying overwrites changes made in the portal. Make changes in the parameter file or `template.json`, not only in the designer.
+> Redeploying overwrites changes made in the portal. Make changes in the parameter file or `azuredeploy.json`, not only in the designer.
 
 ## Report
 
@@ -196,7 +196,7 @@ The report is available as CSV in the **run history**, in the `Create_CSV_table`
 
 | Error | Cause / fix |
 |---|---|
-| `Could not find member 'connections'` when saving in code view | You pasted `automation-task/AutomationTaskTemplate.json` into the code view. Deploy `template.json` instead (step 2). |
+| `Could not find member 'connections'` when saving in code view | You pasted `automation-task/AutomationTaskTemplate.json` into the code view. Deploy `azuredeploy.json` instead (step 2). |
 | `401 Unauthorized` on HTTP actions | The managed identity is not enabled. The template enables it; check Logic App → **Identity**. |
 | Run fails with `FetchMachinesFailed`, `HTTP - Get machines` returns `403 Forbidden` with *"Missing application roles … application roles: ."* | The token has no roles. Either the script from step 3 was not run, or the Logic App ran before the permission had propagated. In the latter case, tokens without the role stay cached on some Azure servers for up to 24 hours, so runs fail at random (some succeed, some fail) until they expire. Check the permission (next row). If it is assigned, wait up to 24 hours. See the warning in step 3. |
 | Check if the permission is assigned | Entra ID → Enterprise applications → filter *Managed Identities* → the Logic App → **Permissions** → should list WindowsDefenderATP `Machine.ReadWrite.All`. |
