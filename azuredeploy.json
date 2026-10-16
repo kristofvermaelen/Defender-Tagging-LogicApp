@@ -384,7 +384,7 @@
                                         ]
                                     },
                                     "type": "Compose",
-                                    "inputs": "@if(\n  not(empty(outputs('ExistingManualTags'))),\n  json('[]'),\n  if(\n    empty(body('MatchedTags')),\n    array(variables('CatchAllTag')),\n    union(body('MatchedTags'), body('MatchedTags'))\n  )\n)"
+                                    "inputs": "@if(\n  not(empty(outputs('ExistingManualTags'))),\n  json('[]'),\n  if(\n    empty(body('MatchedTags')),\n    array(variables('CatchAllTag')),\n    array(first(body('MatchedTags')))\n  )\n)"
                                 },
                                 "TagsToAdd": {
                                     "runAfter": {

@@ -69,6 +69,7 @@ These columns correspond 1:1 with the fields and operators that the Logic App su
 
 - **One row = one rule.** All filled filter cells in a row must match (AND).
 - **The same tag on several rows** acts as an OR, the same as in the Logic App.
+- **Row order is priority.** The Logic App gives a device only the tag of the **first** matching row, so put specific rules above generic ones. The script keeps the row order in the JSON.
 - **Empty cells** are ignored. Completely empty rows are skipped.
 - **Values are trimmed**, so leading and trailing spaces are removed.
 - **`isAadJoined.equals`** must be `true` or `false`. It is written to the JSON as a boolean.

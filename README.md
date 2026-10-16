@@ -48,7 +48,7 @@ Devices are fetched in pages of `PageSize` (10,000) with `$top`/`$skip` until a 
 ### Tag logic per device
 
 1. **Manual tag present** (a tag from `manualTags`): the device gets **no** auto tags. Existing auto tags are removed.
-2. **One or more rules match**: the device gets the tags of all matching rules.
+2. **One or more rules match**: the device gets the tag of the **first** matching rule (rule order = priority). A device never gets more than one auto tag.
 3. **No rule matches**: the device gets the `catchAllTag`.
 
 Only tags listed in the rules, plus the CatchAll tag, are managed. Any other tags on a device are always left alone.
@@ -97,6 +97,7 @@ Each rule has a `tag`, an `assetDomain` (informational) and one or more conditio
 
 - Multiple conditions in one rule must **all** match (AND).
 - Multiple rules with the same tag act as an OR.
+- **Rule order matters:** the first rule that matches decides the tag. Put specific rules above generic ones (e.g. `DC*` servers before all Windows servers).
 - Comparisons are case-insensitive, except `lastIpAddress` and `machineTags`.
 
 ```json
