@@ -15,6 +15,7 @@ An Azure Logic App (Consumption) that automatically tags devices in **Microsoft 
 | `azuredeploy.json` | ARM template of the Logic App. **This is the main file.** |
 | `azuredeploy.parameters.example.json` | Example parameter file. Copy it per customer. |
 | `Grant-DefenderPermissions.ps1` | Grants the Defender API permissions to the managed identity (once per tenant) |
+| `ctem-rules-export/` | Python script that converts the Rules sheet of a CTEM tagging workbook (`.xlsx`) to the `taggingRules` JSON. See its [README](ctem-rules-export/README.md). |
 | `automation-task/AutomationTaskTemplate.json` | Same workflow in Azure automation task template format. Kept for reference, not kept in sync with `azuredeploy.json`. |
 
 ## How it works
