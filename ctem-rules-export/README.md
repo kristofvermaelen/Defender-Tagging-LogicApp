@@ -4,6 +4,13 @@
 
 The customer (or consultant) maintains the rules in Excel. The script validates them and produces the `{ "rules": [...] }` object, so nobody has to write the JSON by hand.
 
+## Files
+
+| File | Contents |
+|---|---|
+| `CTEM_Tagging_Rules_template.xlsx` | Empty workbook for the customer, with the sheets **Rules** (to fill in), **Instructions**, **Examples** and **Asset Domains** |
+| `ctem_rules_to_json_with_domains.py` | Converts the filled **Rules** sheet to `taggingRules` JSON |
+
 ## Requirements
 
 - Python **3.9+**
